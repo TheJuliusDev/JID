@@ -1,0 +1,6 @@
+{
+  "name": "JID",
+  "description": "The dedicated campus marketplace and student accommodation discovery platform for Obafemi Awolowo University (OAU), Ile-Ife.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
