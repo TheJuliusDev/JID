@@ -1,6 +1,7 @@
 {
   "name": "JID",
-  "description": "The dedicated campus marketplace and student accommodation discovery platform for Obafemi Awolowo University (OAU), Ile-Ife.",
+  "description": "The verified student marketplace and accommodation platform for Obafemi Awolowo University (OAU), Ile-Ife. Buy, sell, and find lodges around campus.",
+  "url": "https://jidapp.ng",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

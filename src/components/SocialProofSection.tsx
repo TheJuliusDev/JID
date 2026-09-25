@@ -5,15 +5,15 @@ import { motion } from 'motion/react';
 
 export const SocialProofSection: React.FC = () => {
   return (
-    <section className="py-20 sm:py-24 bg-white dark:bg-[#0E0F15] border-b border-zinc-200/80 dark:border-zinc-800/80 transition-colors duration-200">
+    <section className="py-20 sm:py-24 bg-white dark:bg-charcoal-900 border-b border-zinc-200/80 dark:border-zinc-800/80 transition-colors duration-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Main Statement Banner */}
         <ScrollReveal>
           <div className="bg-zinc-950 dark:bg-zinc-900 text-white rounded-3xl border border-zinc-900 dark:border-zinc-800 p-8 sm:p-14 shadow-xl mb-12 relative overflow-hidden transition-colors">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-orange-600/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none" />
             
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-950/80 border border-orange-800/80 text-orange-400 text-xs font-semibold mb-4">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-800/80 text-emerald-400 text-xs font-semibold mb-4">
               <span>DECLARATION OF PURPOSE</span>
             </div>
 

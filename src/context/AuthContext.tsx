@@ -1,250 +1,218 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { UserProfile } from '../types';
-import { DEMO_USER_JULIUS, DEMO_USER_SELLER_PRAISE, DEMO_USER_ADMIN } from '../data/mockData';
-import { supabase, hasSupabaseConfig, isDemoMode } from '../services/supabase';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import type { UserProfile } from '../types';
+import { supabase, hasSupabaseConfig } from '../services/supabase';
+import { fetchProfileRow, fetchMyRole, updateMyProfile, isUsernameAvailable } from '../services/database';
+
+interface SignupInput {
+  fullName: string;
+  username: string;
+  email: string;
+  password: string;
+  department?: string;
+  level?: string;
+  hallOrArea?: string;
+}
+
+interface AuthResult {
+  success: boolean;
+  error?: string;
+  needsConfirmation?: boolean;
+}
 
 interface AuthContextType {
   user: UserProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  isDemoMode: boolean;
-  login: (email: string, password?: string) => Promise<{ success: boolean; error?: string }>;
-  signup: (userData: { fullName: string; email: string; department: string; level: string; hallOrArea: string; password?: string }) => Promise<{ success: boolean; error?: string }>;
+  isAdmin: boolean;
+  login: (email: string, password: string) => Promise<AuthResult>;
+  signup: (data: SignupInput) => Promise<AuthResult>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; message: string }>;
-  switchDemoUser: (role: 'julius' | 'praise' | 'admin') => void;
-  updateProfile: (updates: Partial<UserProfile>) => void;
-  upgradeToPremium: (plan: string) => void;
+  changePassword: (newPassword: string) => Promise<AuthResult>;
+  deleteAccount: () => Promise<AuthResult>;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<AuthResult>;
+  refreshProfile: () => Promise<void>;
+  checkUsername: (username: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_USER_KEY = 'jid_auth_user';
+/** Convert raw Supabase auth errors into friendly, non-technical messages. */
+function friendlyAuthError(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes('invalid login credentials')) return 'Incorrect email or password. Please try again.';
+  if (m.includes('email not confirmed')) return 'Please confirm your email address first — check your inbox.';
+  if (m.includes('user already registered') || m.includes('already been registered'))
+    return 'An account with this email already exists. Try logging in instead.';
+  if (m.includes('password should be at least')) return 'Your password is too short — use at least 6 characters.';
+  if (m.includes('unable to validate email') || m.includes('invalid email')) return 'That email address looks invalid.';
+  if (m.includes('rate limit') || m.includes('too many')) return 'Too many attempts. Please wait a moment and try again.';
+  if (m.includes('network')) return 'Network error. Check your connection and try again.';
+  return message || 'Something went wrong. Please try again.';
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile | null>(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Failed to parse saved user', e);
-      }
-    }
-    // Default to Julius Adeyemi in demo mode
-    return DEMO_USER_JULIUS;
-  });
-
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const mounted = useRef(true);
 
-  // Synchronize state with Supabase or LocalStorage
-  useEffect(() => {
-    const client = supabase;
-    if (hasSupabaseConfig && client) {
-      // Listen to Supabase auth state changes
-      client.auth.getSession().then(({ data: { session } }) => {
-        if (session?.user) {
-          // Fetch profile
-          client
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single()
-            .then(({ data }) => {
-              if (data) {
-                const liveProfile: UserProfile = {
-                  id: data.id,
-                  email: session.user.email || '',
-                  fullName: data.full_name,
-                  matricNumber: data.matric_number,
-                  department: data.department,
-                  level: data.level,
-                  hallOrArea: data.hall_or_area,
-                  phoneNumber: data.phone_number,
-                  whatsappNumber: data.whatsapp_number,
-                  avatarUrl: data.avatar_url,
-                  bio: data.bio,
-                  isPremium: Boolean(data.is_premium),
-                  isVerified: Boolean(data.is_verified),
-                  role: data.role || 'student',
-                  createdAt: data.created_at
-                };
-                setUser(liveProfile);
-              }
-              setIsLoading(false);
-            });
-        } else {
-          setIsLoading(false);
-        }
-      });
-
-      const { data: authListener } = client.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_IN' && session?.user) {
-          // Fetch profile
-          const { data } = await client.from('profiles').select('*').eq('id', session.user.id).single();
-          if (data) {
-            setUser({
-              id: data.id,
-              email: session.user.email || '',
-              fullName: data.full_name,
-              department: data.department,
-              level: data.level,
-              hallOrArea: data.hall_or_area,
-              phoneNumber: data.phone_number,
-              whatsappNumber: data.whatsapp_number,
-              avatarUrl: data.avatar_url,
-              bio: data.bio,
-              isPremium: Boolean(data.is_premium),
-              isVerified: Boolean(data.is_verified),
-              role: data.role || 'student',
-              createdAt: data.created_at
-            });
-          }
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null);
-        }
-      });
-
-      return () => {
-        authListener.subscription.unsubscribe();
-      };
-    } else {
-      // In demo mode, load initial state quickly
-      setIsLoading(false);
-    }
+  const buildProfile = useCallback(async (userId: string, email: string): Promise<UserProfile | null> => {
+    const [row, role] = await Promise.all([fetchProfileRow(userId), fetchMyRole(userId)]);
+    if (!row) return null;
+    return {
+      id: row.id,
+      email,
+      username: row.username,
+      fullName: row.full_name,
+      department: row.department || undefined,
+      level: row.level || undefined,
+      hallOrArea: row.hall_or_area || undefined,
+      avatarUrl: row.avatar_url || undefined,
+      bio: row.bio || undefined,
+      isAdmin: role === 'admin',
+      createdAt: row.created_at,
+    };
   }, []);
 
-  // Save demo user to local storage whenever changed
+  const loadSession = useCallback(async () => {
+    if (!hasSupabaseConfig || !supabase) {
+      setIsLoading(false);
+      return;
+    }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const profile = await buildProfile(session.user.id, session.user.email || '');
+        if (mounted.current) setUser(profile);
+      } else if (mounted.current) {
+        setUser(null);
+      }
+    } catch (err) {
+      console.error('[auth] session load failed', err);
+    } finally {
+      if (mounted.current) setIsLoading(false);
+    }
+  }, [buildProfile]);
+
   useEffect(() => {
-    if (user) {
-      localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(user));
-    } else {
-      localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+    mounted.current = true;
+    loadSession();
+
+    if (!hasSupabaseConfig || !supabase) return;
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        if (mounted.current) setUser(null);
+        return;
+      }
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        const profile = await buildProfile(session.user.id, session.user.email || '');
+        if (mounted.current && profile) setUser(profile);
+      }
+    });
+
+    return () => {
+      mounted.current = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, [buildProfile, loadSession]);
+
+  const login = useCallback(async (email: string, password: string): Promise<AuthResult> => {
+    if (!supabase) return { success: false, error: 'Backend is not configured.' };
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) return { success: false, error: friendlyAuthError(error.message) };
+    if (data.user) {
+      const profile = await buildProfile(data.user.id, data.user.email || '');
+      if (mounted.current) setUser(profile);
+    }
+    return { success: true };
+  }, [buildProfile]);
+
+  const signup = useCallback(async (input: SignupInput): Promise<AuthResult> => {
+    if (!supabase) return { success: false, error: 'Backend is not configured.' };
+    const username = input.username.trim().toLowerCase();
+    const { data, error } = await supabase.auth.signUp({
+      email: input.email.trim(),
+      password: input.password,
+      options: {
+        data: {
+          full_name: input.fullName.trim(),
+          username,
+          department: input.department?.trim() || '',
+          level: input.level?.trim() || '',
+          hall_or_area: input.hallOrArea?.trim() || '',
+        },
+      },
+    });
+    if (error) return { success: false, error: friendlyAuthError(error.message) };
+
+    if (data.session && data.user) {
+      const profile = await buildProfile(data.user.id, data.user.email || '');
+      if (mounted.current) setUser(profile);
+      return { success: true };
+    }
+    // Email confirmation required — no session yet.
+    return { success: true, needsConfirmation: true };
+  }, [buildProfile]);
+
+  const logout = useCallback(async () => {
+    if (supabase) await supabase.auth.signOut();
+    if (mounted.current) setUser(null);
+  }, []);
+
+  const resetPassword = useCallback(async (email: string): Promise<{ success: boolean; message: string }> => {
+    if (!supabase) return { success: false, message: 'Backend is not configured.' };
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}`,
+    });
+    if (error) return { success: false, message: friendlyAuthError(error.message) };
+    return { success: true, message: 'If an account exists for that email, a reset link is on its way.' };
+  }, []);
+
+  const changePassword = useCallback(async (newPassword: string): Promise<AuthResult> => {
+    if (!supabase) return { success: false, error: 'Backend is not configured.' };
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { success: false, error: friendlyAuthError(error.message) };
+    return { success: true };
+  }, []);
+
+  const deleteAccount = useCallback(async (): Promise<AuthResult> => {
+    if (!supabase || !user) return { success: false, error: 'Not signed in.' };
+    // Deletion of the auth user requires a privileged server function; we remove
+    // the user's own data (RLS-scoped) and sign out. Full auth-row deletion is
+    // handled by an admin/edge function server-side.
+    const { error } = await supabase.rpc('delete_my_account');
+    if (error) return { success: false, error: friendlyAuthError(error.message) };
+    await logout();
+    return { success: true };
+  }, [user, logout]);
+
+  const updateProfile = useCallback(async (updates: Partial<UserProfile>): Promise<AuthResult> => {
+    if (!user) return { success: false, error: 'Not signed in.' };
+    try {
+      await updateMyProfile(user.id, updates);
+      if (mounted.current) setUser((prev) => (prev ? { ...prev, ...updates } : prev));
+      return { success: true };
+    } catch (err: any) {
+      const msg = `${err?.message || ''}`.toLowerCase().includes('duplicate')
+        ? 'That username is already taken.'
+        : friendlyAuthError(err?.message || 'Could not update your profile.');
+      return { success: false, error: msg };
     }
   }, [user]);
 
-  const login = async (email: string, password?: string): Promise<{ success: boolean; error?: string }> => {
-    setIsLoading(true);
+  const refreshProfile = useCallback(async () => {
+    if (!user) return;
+    const profile = await buildProfile(user.id, user.email);
+    if (mounted.current && profile) setUser(profile);
+  }, [user, buildProfile]);
+
+  const checkUsername = useCallback(async (username: string) => {
     try {
-      if (hasSupabaseConfig && supabase) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password: password || 'DefaultPassword123!'
-        });
-        if (error) throw error;
-        return { success: true };
-      } else {
-        // Demo Mode login
-        if (email.toLowerCase().includes('admin')) {
-          setUser(DEMO_USER_ADMIN);
-        } else if (email.toLowerCase().includes('praise')) {
-          setUser(DEMO_USER_SELLER_PRAISE);
-        } else {
-          setUser({
-            ...DEMO_USER_JULIUS,
-            email: email.trim()
-          });
-        }
-        return { success: true };
-      }
-    } catch (err: any) {
-      return { success: false, error: err.message || 'Login failed' };
-    } finally {
-      setIsLoading(false);
+      return await isUsernameAvailable(username.trim().toLowerCase());
+    } catch {
+      return true;
     }
-  };
-
-  const signup = async (userData: {
-    fullName: string;
-    email: string;
-    department: string;
-    level: string;
-    hallOrArea: string;
-    password?: string;
-  }): Promise<{ success: boolean; error?: string }> => {
-    setIsLoading(true);
-    try {
-      if (hasSupabaseConfig && supabase) {
-        const { data, error } = await supabase.auth.signUp({
-          email: userData.email,
-          password: userData.password || 'CampusPassword123!',
-          options: {
-            data: {
-              full_name: userData.fullName,
-              department: userData.department,
-              level: userData.level,
-              hall_or_area: userData.hallOrArea
-            }
-          }
-        });
-        if (error) throw error;
-        return { success: true };
-      } else {
-        // Create new Demo Student profile
-        const newDemoUser: UserProfile = {
-          id: `user-${Date.now()}`,
-          email: userData.email,
-          fullName: userData.fullName,
-          department: userData.department,
-          level: userData.level,
-          hallOrArea: userData.hallOrArea,
-          avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
-          bio: `Student at ${userData.department}. Staying at ${userData.hallOrArea}.`,
-          isPremium: false,
-          isVerified: false,
-          role: 'student',
-          createdAt: new Date().toISOString()
-        };
-        setUser(newDemoUser);
-        return { success: true };
-      }
-    } catch (err: any) {
-      return { success: false, error: err.message || 'Signup failed' };
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const logout = async () => {
-    if (hasSupabaseConfig && supabase) {
-      await supabase.auth.signOut();
-    }
-    setUser(null);
-    localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
-  };
-
-  const resetPassword = async (email: string): Promise<{ success: boolean; message: string }> => {
-    if (hasSupabaseConfig && supabase) {
-      const { error } = await supabase.auth.resetPasswordForEmail(email);
-      if (error) return { success: false, message: error.message };
-      return { success: true, message: 'Password reset link sent to your email.' };
-    }
-    // Demo mode simulated response
-    return {
-      success: true,
-      message: `Demo reset instructions simulated for ${email}. (In production, a secure Supabase recovery email is sent).`
-    };
-  };
-
-  const switchDemoUser = (role: 'julius' | 'praise' | 'admin') => {
-    if (role === 'julius') setUser(DEMO_USER_JULIUS);
-    if (role === 'praise') setUser(DEMO_USER_SELLER_PRAISE);
-    if (role === 'admin') setUser(DEMO_USER_ADMIN);
-  };
-
-  const updateProfile = (updates: Partial<UserProfile>) => {
-    setUser(prev => prev ? { ...prev, ...updates } : null);
-  };
-
-  const upgradeToPremium = (plan: string) => {
-    const expires = new Date();
-    expires.setMonth(expires.getMonth() + (plan === 'annual' ? 12 : plan === 'semester' ? 4 : 1));
-    setUser(prev => prev ? {
-      ...prev,
-      isPremium: true,
-      premiumUntil: expires.toISOString()
-    } : null);
-  };
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -252,14 +220,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         isAuthenticated: Boolean(user),
         isLoading,
-        isDemoMode,
+        isAdmin: Boolean(user?.isAdmin),
         login,
         signup,
         logout,
         resetPassword,
-        switchDemoUser,
+        changePassword,
+        deleteAccount,
         updateProfile,
-        upgradeToPremium
+        refreshProfile,
+        checkUsername,
       }}
     >
       {children}
@@ -269,8 +239,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };

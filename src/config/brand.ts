@@ -6,6 +6,7 @@
 export const BRAND_CONFIG = {
   name: 'JID',
   fullName: 'JID Campus Marketplace & Accommodation',
+  website: 'https://jidapp.ng',
   tagline: 'Your campus. One marketplace.',
   subtagline: 'Buy, sell, and discover student accommodation across Obafemi Awolowo University (OAU), Ile-Ife.',
   institution: {
@@ -114,13 +115,8 @@ export const BRAND_CONFIG = {
   ],
   boostRules: {
     durationHours: 24,
-    requiredAdsCount: 5,
-    description: 'Watch 5 short sponsor ads voluntarily to unlock 24 hours of top visibility.'
-  },
-  premiumPricing: {
-    monthly: 1500,
-    semester: 4500,
-    annual: 8500
+    requiredAdsCount: 2,
+    description: 'Watch 2 short ads to give this listing a 24-hour visibility boost.'
   },
   reportReasons: [
     { id: 'scam', label: 'Suspected Scam or Fraud' },

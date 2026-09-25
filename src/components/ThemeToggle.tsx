@@ -24,7 +24,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
         onClick={toggleTheme}
         aria-label={isDark ? 'Switch to daylight theme' : 'Switch to late-night dark theme'}
         title={isDark ? 'Daylight Mode (Normal)' : 'Late-Night Mode (Dim & Eye-Safe)'}
-        className={`relative inline-flex items-center h-8 sm:h-9 w-14 sm:w-16 rounded-full p-1 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 cursor-pointer select-none ${
+        className={`relative inline-flex items-center h-8 sm:h-9 w-14 sm:w-16 rounded-full p-1 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 cursor-pointer select-none ${
           isDark
             ? 'bg-zinc-800 border border-zinc-700 focus:ring-offset-zinc-950'
             : 'bg-zinc-200 border border-zinc-300/80 focus:ring-offset-white'
@@ -39,7 +39,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
           />
           <Moon 
             className={`w-3.5 h-3.5 transition-opacity duration-200 ${
-              isDark ? 'opacity-90 text-orange-400' : 'opacity-30 text-zinc-400'
+              isDark ? 'opacity-90 text-emerald-400' : 'opacity-30 text-zinc-400'
             }`} 
           />
         </div>
@@ -50,7 +50,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({
           transition={{ type: 'spring', stiffness: 500, damping: 30 }}
           className={`flex items-center justify-center w-6 sm:w-7 h-6 sm:h-7 rounded-full shadow-md z-10 transition-colors ${
             isDark
-              ? 'translate-x-6 sm:translate-x-7 bg-orange-600 text-white'
+              ? 'translate-x-6 sm:translate-x-7 bg-emerald-600 text-white'
               : 'translate-x-0 bg-white text-amber-500'
           }`}
         >

@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="JID — OAU Student Marketplace & Accommodation">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0F7358" />
+      <stop offset="1" stop-color="#083F30" />
+    </linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="150" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" />
+      <stop offset="1" stop-color="#ECFDF5" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#0E0D0C" />
+  <rect width="1200" height="630" fill="url(#bg)" />
+
+  <!-- subtle ambient glow -->
+  <circle cx="980" cy="120" r="360" fill="#34D399" opacity="0.14" />
+  <circle cx="180" cy="560" r="300" fill="#FBBF24" opacity="0.08" />
+
+  <!-- content -->
+  <g transform="translate(110 150)">
+    <!-- logo tile -->
+    <rect x="0" y="0" width="150" height="150" rx="38" fill="url(#tile)" />
+    <text x="75" y="78" font-family="Arial, Helvetica, sans-serif" font-size="104" font-weight="800" fill="#0F7358" text-anchor="middle" dominant-baseline="central">J</text>
+
+    <!-- wordmark -->
+    <text x="188" y="58" font-family="Arial, Helvetica, sans-serif" font-size="120" font-weight="800" fill="#ffffff" letter-spacing="-2">JID</text>
+    <text x="192" y="128" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#FBBF24" letter-spacing="6">GREAT IFE • OAU CAMPUS</text>
+  </g>
+
+  <!-- headline -->
+  <text x="110" y="410" font-family="Arial, Helvetica, sans-serif" font-size="60" font-weight="800" fill="#ffffff" letter-spacing="-1">Buy, sell &amp; find lodges around OAU.</text>
+  <text x="110" y="478" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="500" fill="#D1FAE5">The verified student marketplace &amp; accommodation platform.</text>
+
+  <!-- footer domain -->
+  <text x="110" y="576" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#ffffff" opacity="0.92">jidapp.ng</text>
+</svg>

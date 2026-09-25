@@ -1,32 +1,59 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PropertyListing } from '../../types';
 import { BRAND_CONFIG } from '../../config/brand';
 import { useData } from '../../context/DataContext';
-import { 
-  X, 
-  MapPin, 
-  Heart, 
-  Share2, 
-  ShieldCheck, 
-  Zap, 
-  MessageSquare, 
-  Phone, 
-  Check, 
-  Droplets, 
-  BatteryCharging, 
-  Shield, 
+import { useAuth } from '../../context/AuthContext';
+import { incrementView } from '../../services/database';
+import {
+  X,
+  MapPin,
+  Heart,
+  Share2,
+  ShieldCheck,
+  Zap,
+  MessageSquare,
+  Phone,
+  Check,
+  Droplets,
+  BatteryCharging,
+  Shield,
   ExternalLink,
-  AlertTriangle
+  AlertTriangle,
+  Clock,
+  Pencil,
+  Home,
 } from 'lucide-react';
 
-interface PropertyDetailModalProps {
-  property: PropertyListing | null;
-  onClose: () => void;
-  onStartChat: (landlord: any, property: PropertyListing) => void;
-  onOpenReport: (property: PropertyListing) => void;
-  onOpenBoost?: (property: PropertyListing) => void;
-  isOwner?: boolean;
+interface Landlord {
+  id: string;
+  username?: string;
+  name?: string;
+  fullName?: string;
+  avatarUrl?: string;
 }
+
+interface PropertyDetailModalProps {
+  property: PropertyListing;
+  onClose: () => void;
+  onStartChat: (landlord: Landlord, property: PropertyListing) => void;
+  onOpenReport: (property: PropertyListing) => void;
+  onOpenBoost: (property: PropertyListing) => void;
+  onOpenProfile: (username: string) => void;
+  onEdit: (property: PropertyListing) => void;
+  isOwner: boolean;
+}
+
+const relativeTime = (iso: string) => {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+};
 
 export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
   property,
@@ -34,14 +61,20 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
   onStartChat,
   onOpenReport,
   onOpenBoost,
-  isOwner = false
+  onOpenProfile,
+  onEdit,
+  isOwner,
 }) => {
-  if (!property) return null;
-
-  const { toggleSaveItem, isItemSaved } = useData();
-  const saved = isItemSaved('property', property.id);
+  const { toggleSave, isSaved } = useData();
+  const { isAuthenticated } = useAuth();
+  const saved = isSaved('property', property.id);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [copied, setCopied] = useState(false);
+
+  // Count a view once per open (skip the owner's own visits).
+  useEffect(() => {
+    if (!isOwner) incrementView('property', property.id).catch(() => {});
+  }, [property.id, isOwner]);
 
   const handleShare = () => {
     if (navigator.clipboard) {
@@ -51,21 +84,33 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
     }
   };
 
-  const whatsappPhone = property.contactWhatsapp?.replace(/[^0-9]/g, '') || property.contactPhone.replace(/[^0-9]/g, '');
-  const whatsappUrl = `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(
+  const phone = (property.contactWhatsapp || property.contactPhone || '').replace(/[^0-9]/g, '');
+  const callPhone = (property.contactPhone || '').replace(/[^0-9]/g, '');
+  const hasWhatsapp = phone.length > 0;
+  const hasCall = callPhone.length > 0;
+  const whatsappUrl = `https://wa.me/${phone}?text=${encodeURIComponent(
     `Hello ${property.landlord.name}, I found your student accommodation listing for "${property.title}" on JID OAU Campus Hub. Is it still available for inspection?`
   )}`;
 
+  const cover = property.images[activeImageIndex] || property.images[0];
+
+  const openLandlordProfile = () => {
+    if (property.landlord.username) onOpenProfile(property.landlord.username);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/75 backdrop-blur-sm overflow-y-auto animate-fadeIn">
-      <div 
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/75 backdrop-blur-sm overflow-y-auto animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
         className="relative w-full max-w-4xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl overflow-hidden my-8 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header Bar */}
         <div className="sticky top-0 z-20 flex items-center justify-between px-6 py-4 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center gap-2">
-            <span className="px-3 py-1 text-xs font-bold uppercase tracking-wider bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 rounded-full">
+            <span className="px-3 py-1 text-xs font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded-full">
               {property.roomType}
             </span>
             <span className="px-2.5 py-1 text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-full">
@@ -87,17 +132,19 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
             >
               <Share2 className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => toggleSaveItem('property', property.id)}
-              className={`p-2 rounded-full transition-colors ${
-                saved
-                  ? 'text-rose-500 bg-rose-50 dark:bg-rose-950/40'
-                  : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-              }`}
-              title={saved ? 'Remove bookmark' : 'Bookmark lodge'}
-            >
-              <Heart className={`w-4 h-4 ${saved ? 'fill-current' : ''}`} />
-            </button>
+            {isAuthenticated && (
+              <button
+                onClick={() => void toggleSave('property', property.id)}
+                className={`p-2 rounded-full transition-colors ${
+                  saved
+                    ? 'text-rose-500 bg-rose-50 dark:bg-rose-950/40'
+                    : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                }`}
+                title={saved ? 'Remove bookmark' : 'Bookmark lodge'}
+              >
+                <Heart className={`w-4 h-4 ${saved ? 'fill-current' : ''}`} />
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-2 text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
@@ -119,14 +166,16 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
             {/* Gallery Column */}
             <div className="lg:col-span-7 space-y-4">
               <div className="relative aspect-[16/10] w-full bg-zinc-100 dark:bg-zinc-800 rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800">
-                <img
-                  src={property.images[activeImageIndex] || property.images[0]}
-                  alt={property.title}
-                  className="w-full h-full object-cover"
-                />
+                {cover ? (
+                  <img src={cover} alt={property.title} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-zinc-300 dark:text-zinc-600">
+                    <Home className="w-12 h-12" />
+                  </div>
+                )}
                 <div className="absolute top-4 left-4">
                   <span className="px-3 py-1 text-xs font-semibold bg-zinc-950/80 text-white backdrop-blur-md rounded-lg border border-white/10 flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-orange-500" />
+                    <MapPin className="w-3.5 h-3.5 text-emerald-500" />
                     {property.distanceToCampus}
                   </span>
                 </div>
@@ -141,7 +190,7 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
                       onClick={() => setActiveImageIndex(idx)}
                       className={`relative w-24 h-16 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-all ${
                         activeImageIndex === idx
-                          ? 'border-orange-600 scale-95 shadow-md'
+                          ? 'border-emerald-600 scale-95 shadow-md'
                           : 'border-transparent opacity-60 hover:opacity-100'
                       }`}
                     >
@@ -151,7 +200,7 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
                 </div>
               )}
 
-              {/* Verified Lodge Badge & Safety */}
+              {/* Safety guide */}
               <div className="p-4 bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 rounded-2xl space-y-2 text-xs text-zinc-600 dark:text-zinc-400">
                 <p className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -167,7 +216,7 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
             <div className="lg:col-span-5 space-y-6 flex flex-col justify-between">
               <div className="space-y-4">
                 <div>
-                  <span className="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider">
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
                     {property.availability}
                   </span>
                   <h1 className="text-2xl font-bold text-zinc-950 dark:text-white leading-tight font-display mt-1">
@@ -213,7 +262,7 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
                   <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-300 mb-2">
                     Lodge Overview
                   </h3>
-                  <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed whitespace-pre-line">
                     {property.description}
                   </p>
                 </div>
@@ -238,67 +287,111 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
                   </div>
                 )}
 
-                {/* Landlord / Caretaker Card */}
+                {/* Landlord / Caretaker Card — links to public storefront */}
                 <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-300 mb-2.5">
                     Property Contact
                   </h3>
-                  <div className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-800/40 rounded-2xl border border-zinc-200/80 dark:border-zinc-800">
-                    <div className="w-11 h-11 rounded-full bg-orange-100 dark:bg-orange-950 text-orange-700 font-bold flex items-center justify-center flex-shrink-0">
-                      {property.landlord.name.charAt(0)}
+                  <button
+                    onClick={openLandlordProfile}
+                    disabled={!property.landlord.username}
+                    className="w-full flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-800/40 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 text-left enabled:hover:border-emerald-400 dark:enabled:hover:border-emerald-700 transition-colors disabled:cursor-default"
+                  >
+                    <div className="w-11 h-11 rounded-full overflow-hidden bg-emerald-100 dark:bg-emerald-950 flex-shrink-0 border border-emerald-200 dark:border-emerald-800">
+                      {property.landlord.avatarUrl ? (
+                        <img src={property.landlord.avatarUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center font-bold text-emerald-700">
+                          {property.landlord.name.charAt(0)}
+                        </div>
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-bold text-zinc-900 dark:text-zinc-100 text-sm truncate">
                         {property.landlord.name}
                       </p>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                        {property.landlord.role}
-                      </p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">{property.landlord.role}</p>
                     </div>
-                  </div>
+                    {property.landlord.username && (
+                      <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+                        View profile →
+                      </span>
+                    )}
+                  </button>
                 </div>
               </div>
 
               {/* Actions */}
               <div className="space-y-2.5 pt-4">
                 {isOwner ? (
-                  <button
-                    onClick={() => onOpenBoost && onOpenBoost(property)}
-                    className="w-full py-3.5 px-4 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-orange-600/20 transition-all cursor-pointer"
-                  >
-                    <Zap className="w-4 h-4 fill-current" />
-                    Boost Accommodation Placement
-                  </button>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        onClick={() => onEdit(property)}
+                        className="py-3 px-4 border border-zinc-300 dark:border-zinc-700 hover:border-emerald-600 text-zinc-900 dark:text-zinc-100 font-semibold text-sm rounded-2xl flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        <Pencil className="w-4 h-4" />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => onOpenBoost(property)}
+                        className="py-3 px-4 bg-gradient-to-r from-emerald-600 to-amber-600 hover:from-emerald-500 hover:to-amber-500 text-white font-bold rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer"
+                      >
+                        <Zap className="w-4 h-4 fill-current" />
+                        Boost
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-center text-zinc-600 dark:text-zinc-300">
+                      You own this lodge. Boosting is powered by watching short ads — no payment needed.
+                    </p>
+                  </div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <a
-                        href={whatsappUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm rounded-2xl flex items-center justify-center gap-2 shadow-md transition-all text-center"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                        WhatsApp Caretaker
-                      </a>
-                      <a
-                        href={`tel:${property.contactPhone}`}
-                        className="py-3 px-4 bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-sm rounded-2xl flex items-center justify-center gap-2 shadow-md transition-all text-center"
-                      >
-                        <Phone className="w-4 h-4" />
-                        Call Phone
-                      </a>
-                    </div>
+                    {(hasWhatsapp || hasCall) && (
+                      <div className="grid grid-cols-2 gap-3">
+                        {hasWhatsapp && (
+                          <a
+                            href={whatsappUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm rounded-2xl flex items-center justify-center gap-2 shadow-md transition-all text-center"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            WhatsApp
+                          </a>
+                        )}
+                        {hasCall && (
+                          <a
+                            href={`tel:${callPhone}`}
+                            className={`py-3 px-4 bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-sm rounded-2xl flex items-center justify-center gap-2 shadow-md transition-all text-center ${
+                              hasWhatsapp ? '' : 'col-span-2'
+                            }`}
+                          >
+                            <Phone className="w-4 h-4" />
+                            Call
+                          </a>
+                        )}
+                      </div>
+                    )}
 
                     <button
-                      onClick={() => onStartChat({ ...property.landlord, id: property.userId, fullName: property.landlord.name }, property)}
-                      className="w-full py-3 px-4 border border-zinc-300 dark:border-zinc-700 hover:border-orange-600 dark:hover:border-orange-500 text-zinc-900 dark:text-zinc-100 font-semibold text-sm rounded-2xl flex items-center justify-center gap-2 transition-all"
+                      onClick={() =>
+                        onStartChat(
+                          { ...property.landlord, id: property.userId, fullName: property.landlord.name },
+                          property
+                        )
+                      }
+                      className="w-full py-3 px-4 border border-zinc-300 dark:border-zinc-700 hover:border-emerald-600 dark:hover:border-emerald-500 text-zinc-900 dark:text-zinc-100 font-semibold text-sm rounded-2xl flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
-                      <MessageSquare className="w-4 h-4 text-orange-600" />
+                      <MessageSquare className="w-4 h-4 text-emerald-600" />
                       Inquire In-App
                     </button>
 
-                    <div className="flex justify-end pt-1">
+                    <div className="flex justify-between items-center pt-2">
+                      <span className="text-[11px] text-zinc-600 dark:text-zinc-300 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        Posted {relativeTime(property.createdAt)}
+                      </span>
                       <button
                         onClick={() => onOpenReport(property)}
                         className="text-[11px] text-zinc-600 hover:text-rose-600 dark:hover:text-rose-400 flex items-center gap-1 transition-colors"

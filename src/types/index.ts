@@ -1,34 +1,58 @@
 import { ItemCondition, AccommodationType, AvailabilityStatus } from '../config/brand';
 
-export type UserRole = 'student' | 'landlord' | 'agent' | 'moderator' | 'admin';
+/** Account authorization role — mirrors the DB `user_roles` table. */
+export type AccountRole = 'user' | 'admin';
 
+/** Descriptive role attached to an accommodation listing (not an account role). */
+export type LandlordRole =
+  | 'Student Subletter'
+  | 'Lodge Caretaker'
+  | 'Direct Landlord'
+  | 'Campus Agent';
+
+/**
+ * The signed-in user. Only public-safe fields plus the session email.
+ * `isAdmin` is derived from the DB `user_roles` table (never trusted from the
+ * client) and is used purely to decide whether to attempt admin data access —
+ * every admin action is still enforced server-side by RLS.
+ */
 export interface UserProfile {
   id: string;
   email: string;
+  username: string;
   fullName: string;
-  matricNumber?: string;
-  department: string;
-  level: string; // '100L' | '200L' | '300L' | '400L' | '500L' | 'Graduating Stalite';
-  hallOrArea: string;
-  phoneNumber?: string;
-  whatsappNumber?: string;
+  department?: string;
+  level?: string;
+  hallOrArea?: string;
   avatarUrl?: string;
   bio?: string;
-  isPremium: boolean;
-  premiumUntil?: string;
-  isVerified: boolean;
-  role: UserRole;
+  isAdmin: boolean;
   createdAt: string;
 }
 
-export type ListingCategory = 
-  | 'electronics' 
-  | 'phones' 
-  | 'computers' 
-  | 'books' 
-  | 'fashion' 
-  | 'furniture' 
-  | 'school-supplies' 
+/** Public storefront view of any user (no email / phone / private data). */
+export interface PublicProfile {
+  id: string;
+  username: string;
+  fullName: string;
+  department?: string;
+  level?: string;
+  hallOrArea?: string;
+  avatarUrl?: string;
+  bio?: string;
+  createdAt: string;
+  avgRating: number;
+  reviewCount: number;
+}
+
+export type ListingCategory =
+  | 'electronics'
+  | 'phones'
+  | 'computers'
+  | 'books'
+  | 'fashion'
+  | 'furniture'
+  | 'school-supplies'
   | 'other';
 
 export type ListingStatus = 'active' | 'paused' | 'sold' | 'removed';
@@ -55,15 +79,17 @@ export interface MarketplaceItem {
   createdAt: string;
   updatedAt?: string;
   seller: {
+    id: string;
+    username: string;
     name: string;
-    department: string;
-    level: string;
-    hallOrArea: string;
+    department?: string;
+    level?: string;
+    hallOrArea?: string;
     avatarUrl?: string;
-    isPremium: boolean;
-    isVerified: boolean;
   };
 }
+
+export type PropertyStatus = 'active' | 'paused' | 'rented' | 'removed';
 
 export interface PropertyListing {
   id: string;
@@ -83,8 +109,8 @@ export interface PropertyListing {
   images: string[];
   contactPhone: string;
   contactWhatsapp?: string;
-  isVerified: boolean;
-  status: 'active' | 'paused' | 'rented' | 'removed';
+  isVerified: boolean; // moderation-controlled only; never self-serve
+  status: PropertyStatus;
   viewsCount: number;
   savesCount: number;
   isBoosted: boolean;
@@ -92,11 +118,12 @@ export interface PropertyListing {
   createdAt: string;
   updatedAt?: string;
   landlord: {
+    id: string;
+    username: string;
     name: string;
-    role: 'Student Subletter' | 'Lodge Caretaker' | 'Direct Landlord' | 'Campus Agent';
+    role: LandlordRole;
     phone: string;
     avatarUrl?: string;
-    isVerified: boolean;
   };
 }
 
@@ -111,13 +138,9 @@ export interface SavedItem {
 
 export interface Message {
   id: string;
+  conversationId: string;
   senderId: string;
-  receiverId: string;
-  listingType?: 'marketplace' | 'property';
-  listingId?: string;
-  listingTitle?: string;
   content: string;
-  isRead: boolean;
   createdAt: string;
 }
 
@@ -125,15 +148,16 @@ export interface Conversation {
   id: string;
   participant: {
     id: string;
+    username?: string;
     fullName: string;
     avatarUrl?: string;
     department?: string;
     level?: string;
     hallOrArea?: string;
-    isPremium?: boolean;
   };
-  lastMessage: Message;
+  lastMessage?: Message;
   unreadCount: number;
+  lastMessageAt: string;
   listingRef?: {
     id: string;
     title: string;
@@ -143,27 +167,53 @@ export interface Conversation {
   };
 }
 
+export type NotificationType = 'message' | 'boost' | 'inquiry' | 'system' | 'report' | 'review';
+
 export interface NotificationItem {
   id: string;
   userId: string;
   title: string;
   message: string;
-  type: 'message' | 'boost' | 'inquiry' | 'system' | 'report';
+  type: NotificationType;
   link?: string;
   isRead: boolean;
   createdAt: string;
 }
+
+export type BoostStatus = 'active' | 'expired' | 'cancelled';
 
 export interface BoostRecord {
   id: string;
   listingId: string;
   listingType: 'marketplace' | 'property';
   userId: string;
-  adsCompleted: number;
   startedAt: string;
   expiresAt: string;
-  status: 'active' | 'expired';
+  status: BoostStatus;
 }
+
+export interface VendorReview {
+  id: string;
+  vendorId: string;
+  reviewerId: string;
+  rating: number; // 1..5
+  comment?: string;
+  createdAt: string;
+  updatedAt?: string;
+  reviewer?: {
+    username: string;
+    fullName: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface VendorRatingSummary {
+  average: number;
+  count: number;
+  distribution: Record<1 | 2 | 3 | 4 | 5, number>;
+}
+
+export type ReportStatus = 'pending' | 'reviewing' | 'resolved' | 'dismissed' | 'action_taken';
 
 export interface ReportItem {
   id: string;
@@ -173,18 +223,19 @@ export interface ReportItem {
   targetTitle: string;
   reason: string;
   details?: string;
-  status: 'pending' | 'reviewed' | 'dismissed' | 'action_taken';
+  status: ReportStatus;
   createdAt: string;
 }
 
-export type ViewType = 
-  | 'home' 
-  | 'marketplace' 
-  | 'accommodation' 
-  | 'dashboard' 
-  | 'my-listings' 
-  | 'saved' 
-  | 'messages' 
-  | 'premium' 
-  | 'profile' 
-  | 'admin';
+export type ViewType =
+  | 'home'
+  | 'marketplace'
+  | 'accommodation'
+  | 'dashboard'
+  | 'my-listings'
+  | 'saved'
+  | 'messages'
+  | 'profile'
+  | 'public-profile'
+  | 'admin'
+  | 'admin-login';

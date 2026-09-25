@@ -6,6 +6,9 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
+    // Expose both EXPO_PUBLIC_* (production convention) and VITE_* (fallback)
+    // env vars to the client bundle via import.meta.env.
+    envPrefix: ['EXPO_PUBLIC_', 'VITE_'],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

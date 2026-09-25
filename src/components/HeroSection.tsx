@@ -1,19 +1,20 @@
-import React, { useState } from 'react';
-import { 
-  ArrowUpRight, 
-  CheckCircle2, 
-  ShieldCheck, 
-  MapPin, 
-  Zap, 
-  Sparkles, 
-  Search, 
-  Home, 
-  ShoppingBag, 
+import React, { useState, useEffect } from 'react';
+import {
+  ArrowUpRight,
+  CheckCircle2,
+  ShieldCheck,
+  MapPin,
+  Zap,
+  Sparkles,
+  Search,
+  Home,
+  ShoppingBag,
   PlusCircle,
   ArrowRight
 } from 'lucide-react';
 import { BRAND_CONFIG } from '../config/brand';
-import { useData } from '../context/DataContext';
+import { MarketplaceItem, PropertyListing } from '../types';
+import { listMarketplace, listProperties } from '../services/database';
 
 interface HeroSectionProps {
   onExploreMarketplace: () => void;
@@ -26,26 +27,44 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   onExploreAccommodation,
   onOpenCreateListing,
 }) => {
-  const { marketplaceItems, propertyListings } = useData();
   const [searchQuery, setSearchQuery] = useState('');
+  const [featuredItem, setFeaturedItem] = useState<MarketplaceItem | null>(null);
+  const [featuredApt, setFeaturedApt] = useState<PropertyListing | null>(null);
 
-  const featuredItem = marketplaceItems[0];
-  const featuredApt = propertyListings[0];
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [items, props] = await Promise.all([
+          listMarketplace({ limit: 1, sort: 'boosted' }),
+          listProperties({ limit: 1, sort: 'boosted' }),
+        ]);
+        if (cancelled) return;
+        setFeaturedItem(items[0] || null);
+        setFeaturedApt(props[0] || null);
+      } catch (err) {
+        if (!cancelled) console.error('[hero] featured fetch failed', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const quickSearchTags = ['MacBook Air', 'Engineering Maths', 'Asherifa Self-Con', 'Galaxy S22', 'Study Desk'];
 
   return (
-    <section id="hero-section" className="relative pt-10 sm:pt-16 pb-16 sm:pb-24 overflow-hidden bg-gradient-to-b from-white via-[#FAFAF9] to-[#F4F4F5] dark:from-[#090A0F] dark:via-[#0D0E15] dark:to-[#111219] border-b border-zinc-200/80 dark:border-zinc-800/80 transition-colors duration-200">
+    <section id="hero-section" className="relative pt-10 sm:pt-16 pb-16 sm:pb-24 overflow-hidden bg-gradient-to-b from-white via-sand-50 to-sand-100 dark:from-charcoal-950 dark:via-charcoal-950 dark:to-charcoal-900 border-b border-zinc-200/80 dark:border-zinc-800/80 transition-colors duration-200">
       {/* Background subtle modern grid & ambient glow */}
       <div className="absolute inset-0 modern-grid-pattern pointer-events-none opacity-60 dark:opacity-40" />
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-orange-500/8 dark:bg-orange-500/12 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-emerald-500/8 dark:bg-emerald-500/12 blur-[120px] rounded-full pointer-events-none" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         
         {/* Editorial Campus Sub-header Pill */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-8 pb-4 border-b border-zinc-200/60 dark:border-zinc-800/60">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-850/60 text-orange-700 dark:text-orange-400 text-xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-orange-600 animate-pulse" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-850/60 text-emerald-700 dark:text-emerald-400 text-xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
             <span>EXCLUSIVELY FOR GREAT IFE • OAU CAMPUS</span>
           </div>
           
@@ -64,7 +83,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
           <div className="lg:col-span-6 flex flex-col justify-center">
             <h1 className="font-display text-4xl sm:text-6xl md:text-[62px] font-black tracking-tight text-zinc-950 dark:text-white leading-[1.05] mb-6">
               Buy, sell & find lodges around OAU{' '}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-amber-600 dark:from-orange-500 dark:to-amber-400">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-amber-600 dark:from-emerald-500 dark:to-amber-400">
                 without the WhatsApp chaos.
               </span>
             </h1>
@@ -86,7 +105,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                 />
                 <button
                   onClick={onExploreMarketplace}
-                  className="hidden sm:inline-flex items-center gap-1.5 bg-zinc-950 dark:bg-orange-600 hover:bg-orange-600 dark:hover:bg-orange-700 text-white px-4 py-2 rounded-xl text-xs font-semibold shrink-0 transition-colors cursor-pointer"
+                  className="hidden sm:inline-flex items-center gap-1.5 bg-zinc-950 dark:bg-emerald-600 hover:bg-emerald-600 dark:hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-semibold shrink-0 transition-colors cursor-pointer"
                 >
                   <span>Search</span>
                 </button>
@@ -114,7 +133,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
             <div className="flex flex-wrap items-center gap-3.5 mb-8">
               <button
                 onClick={onExploreMarketplace}
-                className="group inline-flex items-center justify-center gap-2.5 bg-orange-600 hover:bg-orange-500 active:scale-[0.98] text-white px-7 py-3.5 rounded-2xl font-bold text-sm shadow-xl shadow-orange-600/25 transition-all cursor-pointer"
+                className="group inline-flex items-center justify-center gap-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white px-7 py-3.5 rounded-2xl font-bold text-sm shadow-xl shadow-emerald-600/25 transition-all cursor-pointer"
               >
                 <ShoppingBag className="w-4 h-4" />
                 <span>Explore Marketplace</span>
@@ -131,7 +150,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
               <button
                 onClick={onOpenCreateListing}
-                className="inline-flex items-center justify-center gap-2 text-orange-600 dark:text-orange-400 hover:underline px-4 py-3.5 font-bold text-sm cursor-pointer"
+                className="inline-flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 hover:underline px-4 py-3.5 font-bold text-sm cursor-pointer"
               >
                 <PlusCircle className="w-4 h-4" />
                 <span>Post an Ad</span>
@@ -145,7 +164,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                 <span>Verified OAU students</span>
               </div>
               <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-orange-600" />
+                <MapPin className="w-4 h-4 text-emerald-600" />
                 <span>SUB & Hezekiah Handover</span>
               </div>
               <div className="flex items-center gap-2">
@@ -166,7 +185,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                       Live Campus Highlights
                     </span>
                   </div>
-                  <span className="text-xs font-mono text-orange-600 dark:text-orange-400 font-bold">
+                  <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 font-bold">
                     OAU Feed
                   </span>
                 </div>
@@ -175,7 +194,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                 {featuredItem && (
                   <div 
                     onClick={onExploreMarketplace}
-                    className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200/80 dark:border-zinc-700/80 hover:border-orange-500 cursor-pointer transition-all flex items-center gap-4 group"
+                    className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200/80 dark:border-zinc-700/80 hover:border-emerald-500 cursor-pointer transition-all flex items-center gap-4 group"
                   >
                     <img
                       src={featuredItem.images[0]}
@@ -184,7 +203,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 rounded">
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded">
                           {featuredItem.category}
                         </span>
                         {featuredItem.isBoosted && (
@@ -193,7 +212,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                           </span>
                         )}
                       </div>
-                      <h4 className="font-bold text-sm text-zinc-900 dark:text-white truncate mt-1 group-hover:text-orange-600 transition-colors">
+                      <h4 className="font-bold text-sm text-zinc-900 dark:text-white truncate mt-1 group-hover:text-emerald-600 transition-colors">
                         {featuredItem.title}
                       </h4>
                       <p className="text-base font-extrabold text-zinc-950 dark:text-white font-display mt-0.5">
@@ -239,7 +258,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                   <span>Direct WhatsApp & In-App Handover</span>
                   <button
                     onClick={onExploreMarketplace}
-                    className="font-bold text-orange-600 hover:underline flex items-center gap-1"
+                    className="font-bold text-emerald-600 hover:underline flex items-center gap-1"
                   >
                     Browse All Listings &rarr;
                   </button>

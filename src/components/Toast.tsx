@@ -49,7 +49,7 @@ export const Toast: React.FC<ToastProps> = ({
                     {title}
                   </h4>
                   {passNumber && (
-                    <span className="bg-orange-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    <span className="bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
                       Pass #{passNumber}
                     </span>
                   )}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUpRight, Heart, ShoppingBag, Building, ShieldCheck, PlusCircle, Crown } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { BRAND_CONFIG } from '../config/brand';
 import { ViewType } from '../types';
 
@@ -19,13 +19,13 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenCreate }) => {
           {/* Brand & Logo */}
           <div className="md:col-span-5 space-y-4">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-orange-600 text-white flex items-center justify-center font-display font-black text-sm shadow-sm">
+              <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-display font-black text-sm shadow-sm">
                 {BRAND_CONFIG.name.charAt(0)}
               </div>
               <span className="font-display text-2xl font-black tracking-tight text-white">
                 {BRAND_CONFIG.name}
               </span>
-              <span className="text-[11px] font-semibold text-orange-400 bg-orange-950/60 border border-orange-800/60 px-2 py-0.5 rounded-full font-mono">
+              <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full font-mono">
                 {BRAND_CONFIG.institution.shortName} Grid
               </span>
             </div>
@@ -35,7 +35,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenCreate }) => {
             </p>
 
             <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-300 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800">
-              <ShieldCheck className="w-3.5 h-3.5 text-orange-500" />
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
               <span>Built for {BRAND_CONFIG.institution.sobriquet} students.</span>
             </div>
           </div>
@@ -71,17 +71,8 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenCreate }) => {
             </div>
             <div>
               <button
-                onClick={() => onNavigate('premium')}
-                className="text-amber-500 font-bold hover:text-amber-400 transition-colors block py-1 text-left cursor-pointer flex items-center gap-1"
-              >
-                <Crown className="w-3.5 h-3.5" />
-                Premium Member Perks
-              </button>
-            </div>
-            <div>
-              <button
                 onClick={onOpenCreate}
-                className="text-orange-500 font-bold hover:text-orange-400 transition-colors block py-1 text-left cursor-pointer"
+                className="text-emerald-500 font-bold hover:text-emerald-400 transition-colors block py-1 text-left cursor-pointer"
               >
                 + Post an Item or Lodge
               </button>
@@ -118,7 +109,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenCreate }) => {
           <div className="flex items-center gap-2">
             <span>Ile-Ife, Osun State</span>
             <span>&bull;</span>
-            <span className="text-orange-500 font-medium">{BRAND_CONFIG.institution.sobriquet}</span>
+            <span className="text-emerald-500 font-medium">{BRAND_CONFIG.institution.sobriquet}</span>
           </div>
         </div>
 

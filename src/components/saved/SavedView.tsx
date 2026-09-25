@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { MarketplaceItem, PropertyListing } from '../../types';
 import { useData } from '../../context/DataContext';
+import { getMarketplace, getProperty } from '../../services/database';
 import { MarketplaceCard } from '../marketplace/MarketplaceCard';
 import { PropertyCard } from '../accommodation/PropertyCard';
-import { Heart, ShoppingBag, Building, Sparkles } from 'lucide-react';
+import { Heart, Loader2 } from 'lucide-react';
 
 interface SavedViewProps {
   onSelectItem: (item: MarketplaceItem) => void;
@@ -11,32 +12,49 @@ interface SavedViewProps {
   onExploreMarketplace: () => void;
 }
 
-export const SavedView: React.FC<SavedViewProps> = ({
-  onSelectItem,
-  onSelectProperty,
-  onExploreMarketplace
-}) => {
-  const { savedListings, marketplaceItems, propertyListings } = useData();
-  const [activeFilter, setActiveFilter] = useState<'all' | 'marketplace' | 'property'>('all');
+type SavedEntry =
+  | { type: 'marketplace'; data: MarketplaceItem }
+  | { type: 'property'; data: PropertyListing };
 
-  // Hydrate saved items with current listings
-  const savedItems = useMemo(() => {
-    return savedListings
-      .map(saved => {
-        if (saved.listingType === 'marketplace') {
-          const item = marketplaceItems.find(i => i.id === saved.listingId);
-          return item ? { type: 'marketplace' as const, data: item } : null;
-        } else {
-          const prop = propertyListings.find(p => p.id === saved.listingId);
-          return prop ? { type: 'property' as const, data: prop } : null;
-        }
-      })
-      .filter((item): item is { type: 'marketplace'; data: MarketplaceItem } | { type: 'property'; data: PropertyListing } => item !== null)
-      .filter(item => {
-        if (activeFilter === 'all') return true;
-        return item.type === activeFilter;
-      });
-  }, [savedListings, marketplaceItems, propertyListings, activeFilter]);
+export const SavedView: React.FC<SavedViewProps> = ({ onSelectItem, onSelectProperty, onExploreMarketplace }) => {
+  const { saved } = useData();
+  const [activeFilter, setActiveFilter] = useState<'all' | 'marketplace' | 'property'>('all');
+  const [entries, setEntries] = useState<SavedEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Hydrate the saved rows into their current listings (they may have changed or been removed).
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const results = await Promise.all(
+          saved.map(async (s): Promise<SavedEntry | null> => {
+            if (s.listingType === 'marketplace') {
+              const item = await getMarketplace(s.listingId);
+              return item ? { type: 'marketplace', data: item } : null;
+            }
+            const prop = await getProperty(s.listingId);
+            return prop ? { type: 'property', data: prop } : null;
+          })
+        );
+        if (cancelled) return;
+        setEntries(results.filter((e): e is SavedEntry => e !== null));
+      } catch (err) {
+        if (!cancelled) console.error('[saved] hydrate failed', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [saved]);
+
+  const savedItems = useMemo(
+    () => (activeFilter === 'all' ? entries : entries.filter((e) => e.type === activeFilter)),
+    [entries, activeFilter]
+  );
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
@@ -70,20 +88,18 @@ export const SavedView: React.FC<SavedViewProps> = ({
       </div>
 
       {/* Grid */}
-      {savedItems.length > 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-24 text-zinc-400">
+          <Loader2 className="w-7 h-7 animate-spin" />
+        </div>
+      ) : savedItems.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {savedItems.map((entry) => (
             <React.Fragment key={entry.data.id}>
               {entry.type === 'marketplace' ? (
-                <MarketplaceCard
-                  item={entry.data}
-                  onClick={() => onSelectItem(entry.data)}
-                />
+                <MarketplaceCard item={entry.data} onClick={() => onSelectItem(entry.data)} />
               ) : (
-                <PropertyCard
-                  property={entry.data}
-                  onClick={() => onSelectProperty(entry.data)}
-                />
+                <PropertyCard property={entry.data} onClick={() => onSelectProperty(entry.data)} />
               )}
             </React.Fragment>
           ))}
@@ -94,16 +110,14 @@ export const SavedView: React.FC<SavedViewProps> = ({
             <Heart className="w-8 h-8" />
           </div>
           <div className="max-w-md mx-auto">
-            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-              No saved listings yet
-            </h3>
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">No saved listings yet</h3>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-              Click the heart icon on any marketplace item or accommodation lodge to save it here for later.
+              Tap the heart icon on any marketplace item or accommodation lodge to save it here for later.
             </p>
           </div>
           <button
             onClick={onExploreMarketplace}
-            className="px-6 py-3 bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs rounded-xl shadow transition-all cursor-pointer"
+            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow transition-all cursor-pointer"
           >
             Explore Marketplace
           </button>

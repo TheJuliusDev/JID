@@ -2,20 +2,78 @@
 <html lang="en" class="scroll-smooth">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>JID — OAU Student Marketplace | Great Ife</title>
-    <meta name="description" content="Buy, sell, and find accommodation around Obafemi Awolowo University (OAU), Ile-Ife without endless WhatsApp broadcasts." />
-    <meta property="og:title" content="JID — OAU Student Marketplace | Great Ife" />
-    <meta property="og:description" content="Buy, sell, and find accommodation around OAU without relying on endless WhatsApp messages, random contacts, or word of mouth." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <title>JID — OAU Student Marketplace & Accommodation | Great Ife</title>
+    <meta
+      name="description"
+      content="JID is the verified student marketplace and accommodation platform for Obafemi Awolowo University (OAU), Ile-Ife. Buy, sell, and find lodges around campus — without the WhatsApp chaos."
+    />
+    <link rel="canonical" href="https://jidapp.ng/" />
+    <meta name="robots" content="index, follow" />
+    <meta name="application-name" content="JID" />
+    <meta name="author" content="JID" />
+
+    <!-- Icons -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="mask-icon" href="/favicon.svg" color="#0F7358" />
+
+    <!-- Theme color (matches app light/dark backgrounds) -->
+    <meta name="theme-color" content="#FBFAF8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0E0D0C" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+
+    <!-- Open Graph -->
+    <meta property="og:site_name" content="JID" />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://jidapp.ng/" />
+    <meta property="og:title" content="JID — OAU Student Marketplace & Accommodation" />
+    <meta
+      property="og:description"
+      content="Buy, sell, and find accommodation around Obafemi Awolowo University (OAU), Ile-Ife. A verified student marketplace built for Great Ife — no endless WhatsApp broadcasts."
+    />
+    <meta property="og:locale" content="en_NG" />
+    <meta property="og:image" content="https://jidapp.ng/og-image.svg" />
+    <meta property="og:image:type" content="image/svg+xml" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="JID — OAU Student Marketplace & Accommodation" />
+
+    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="JID — OAU Student Marketplace & Accommodation" />
+    <meta
+      name="twitter:description"
+      content="Buy, sell, and find lodges around OAU, Ile-Ife. The verified student marketplace and accommodation platform for Great Ife."
+    />
+    <meta name="twitter:image" content="https://jidapp.ng/og-image.svg" />
+
+    <!-- No-flash theme: apply the saved/system theme before first paint (mirrors ThemeContext) -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('jid_campus_theme');
+          if (t !== 'light' && t !== 'dark') {
+            t =
+              window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light';
+          }
+          if (t === 'dark') document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
   </head>
-  <body class="bg-[#FAFAF9] text-zinc-950 antialiased selection:bg-orange-600 selection:text-white font-sans">
+  <body class="bg-[#FBFAF8] dark:bg-[#0E0D0C] text-zinc-950 dark:text-zinc-100 antialiased selection:bg-emerald-600 selection:text-white font-sans">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

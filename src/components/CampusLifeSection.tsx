@@ -1,8 +1,64 @@
 import React, { useState } from 'react';
-import { MapPin, Navigation, Compass, ArrowRight, BookOpen, Building, Bed, Bike, Compass as CompassIcon } from 'lucide-react';
-import { CAMPUS_ECOSYSTEM_NODES } from '../data/mockData';
+import { MapPin, Compass, Compass as CompassIcon } from 'lucide-react';
 import { ScrollReveal } from './ScrollReveal';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
+
+/**
+ * Static, factual OAU campus geography used by the landing-page explainer.
+ * This is descriptive location context (not user data or listings), so it
+ * lives in the component rather than the database.
+ */
+interface CampusNode {
+  id: string;
+  name: string;
+  subtitle: string;
+  type: 'academic' | 'hall' | 'off-campus' | 'transit';
+  vibe: string;
+  typicalActivity: string;
+}
+
+const CAMPUS_ECOSYSTEM_NODES: CampusNode[] = [
+  {
+    id: 'sub',
+    name: 'SUB (Students’ Union Building)',
+    subtitle: 'The epicenter of commerce & student community',
+    type: 'academic',
+    vibe: 'High energy, vibrant trade, student meetings',
+    typicalActivity: 'Where quick handovers, phone exchanges, and textbook swaps naturally happen.',
+  },
+  {
+    id: 'amphi',
+    name: 'Amphitheatre & Motion Ground',
+    subtitle: 'Cultural crossroad & gathering space',
+    type: 'academic',
+    vibe: 'Expansive open-air, creative hub',
+    typicalActivity: 'Meetup spot for evening deals and creative campus brand drops.',
+  },
+  {
+    id: 'halls',
+    name: 'Fajuyi, Awo, Moremi & Mozambique',
+    subtitle: 'The historic undergraduate residential halls',
+    type: 'hall',
+    vibe: 'Thriving student brotherhood & sisterhood',
+    typicalActivity: 'Graduating stalites pass down reading desks, fans, and mini-fridges directly to juniors.',
+  },
+  {
+    id: 'asherifa-damico',
+    name: 'Asherifa & Damico Off-Campus Axis',
+    subtitle: 'The sprawling private student housing neighborhoods',
+    type: 'off-campus',
+    vibe: 'Independent living, cafes, tech workstations',
+    typicalActivity: 'Students searching for self-contained lodges without paying ₦100k agent fees.',
+  },
+  {
+    id: 'gate',
+    name: 'OAU Campus Gate & Town Service',
+    subtitle: 'The transport artery connecting Ife town and campus',
+    type: 'transit',
+    vibe: 'Constant motion, Danfo buses, bike drops',
+    typicalActivity: 'The daily commute route between Mayfair, Ede Road, and campus lecture halls.',
+  },
+];
 
 export const CampusLifeSection: React.FC = () => {
   const [activeNodeId, setActiveNodeId] = useState<string>('sub');
@@ -10,14 +66,14 @@ export const CampusLifeSection: React.FC = () => {
   const selectedNode = CAMPUS_ECOSYSTEM_NODES.find(n => n.id === activeNodeId) || CAMPUS_ECOSYSTEM_NODES[0];
 
   return (
-    <section id="campus-life" className="py-20 sm:py-28 bg-[#FAFAF9] dark:bg-[#090A0F] border-b border-zinc-200/80 dark:border-zinc-800/80 relative transition-colors duration-200">
+    <section id="campus-life" className="py-20 sm:py-28 bg-sand-50 dark:bg-charcoal-950 border-b border-zinc-200/80 dark:border-zinc-800/80 relative transition-colors duration-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}
         <ScrollReveal>
           <div className="max-w-3xl mb-14">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-850/60 text-orange-700 dark:text-orange-400 text-xs font-semibold mb-3">
-              <CompassIcon className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-850/60 text-emerald-700 dark:text-emerald-400 text-xs font-semibold mb-3">
+              <CompassIcon className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>THE OAU TERRITORY &middot; ILE-IFE</span>
             </div>
 
@@ -45,7 +101,7 @@ export const CampusLifeSection: React.FC = () => {
             
             <div className="flex items-center justify-between pb-4 mb-6 border-b border-zinc-100 dark:border-zinc-800">
               <div className="flex items-center gap-2">
-                <Compass className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                <Compass className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span className="text-xs font-bold uppercase tracking-wider text-zinc-900 dark:text-zinc-100">
                   Campus &amp; Lodges Matrix
                 </span>
@@ -65,25 +121,25 @@ export const CampusLifeSection: React.FC = () => {
                     onClick={() => setActiveNodeId(node.id)}
                     className={`w-full text-left p-4 rounded-2xl border transition-all flex items-start justify-between cursor-pointer ${
                       isActive
-                        ? 'bg-zinc-950 dark:bg-orange-600 text-white border-zinc-950 dark:border-orange-500 shadow-md'
+                        ? 'bg-zinc-950 dark:bg-emerald-600 text-white border-zinc-950 dark:border-emerald-500 shadow-md'
                         : 'bg-zinc-50/70 dark:bg-zinc-850/60 text-zinc-800 dark:text-zinc-200 border-zinc-200/80 dark:border-zinc-800 hover:bg-zinc-100/80 dark:hover:bg-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
                     }`}
                   >
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-orange-500 dark:bg-white' : 'bg-zinc-400 dark:bg-zinc-600'}`} />
+                        <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500 dark:bg-white' : 'bg-zinc-400 dark:bg-zinc-600'}`} />
                         <span className="font-display text-base font-bold">
                           {node.name}
                         </span>
                       </div>
-                      <div className={`text-xs ${isActive ? 'text-zinc-300 dark:text-orange-100' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                      <div className={`text-xs ${isActive ? 'text-zinc-300 dark:text-emerald-100' : 'text-zinc-500 dark:text-zinc-400'}`}>
                         {node.subtitle}
                       </div>
                     </div>
 
                     <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
                       isActive 
-                        ? 'bg-zinc-800 dark:bg-orange-700 text-orange-400 dark:text-white border border-zinc-700 dark:border-orange-600' 
+                        ? 'bg-zinc-800 dark:bg-emerald-700 text-emerald-400 dark:text-white border border-zinc-700 dark:border-emerald-600' 
                         : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700'
                     }`}>
                       {node.type}
@@ -111,7 +167,7 @@ export const CampusLifeSection: React.FC = () => {
               transition={{ duration: 0.55, delay: 0.08, ease: [0.21, 1, 0.36, 1] }}
               className="bg-zinc-950 dark:bg-zinc-900 text-white rounded-3xl border border-zinc-900 dark:border-zinc-800 p-6 sm:p-8 shadow-xl"
             >
-              <div className="text-xs font-semibold text-orange-400 uppercase tracking-wider mb-2">
+              <div className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2">
                 Zone Overview
               </div>
 
@@ -124,7 +180,7 @@ export const CampusLifeSection: React.FC = () => {
               </div>
 
               <div className="bg-zinc-900/80 dark:bg-zinc-800/80 p-4 rounded-2xl border border-zinc-800 dark:border-zinc-700 mb-5">
-                <span className="text-[10px] font-semibold uppercase text-orange-400 block mb-1">
+                <span className="text-[10px] font-semibold uppercase text-emerald-400 block mb-1">
                   How Students Interact Here
                 </span>
                 <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
@@ -133,7 +189,7 @@ export const CampusLifeSection: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-2 text-xs text-zinc-400">
-                <MapPin className="w-3.5 h-3.5 text-orange-500" />
+                <MapPin className="w-3.5 h-3.5 text-emerald-500" />
                 <span>Geotagged for safe student meetups &amp; verified lodge visits</span>
               </div>
             </motion.div>
@@ -151,7 +207,7 @@ export const CampusLifeSection: React.FC = () => {
               <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed mb-4">
                 A generic classifieds site doesn't understand that a student in Fajuyi Hall needs a meetup spot at the SUB car park before 6 PM, or that "Asherifa" means calculating bike fare from the gate. JID is designed specifically for OAU geography.
               </p>
-              <div className="flex items-center gap-2 text-xs font-semibold text-orange-700 dark:text-orange-400">
+              <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                 <span>Made in Ile-Ife</span>
                 <span>&bull;</span>
                 <span>For Great Ife</span>

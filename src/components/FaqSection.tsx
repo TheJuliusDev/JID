@@ -61,14 +61,14 @@ export const FaqSection: React.FC<FaqSectionProps> = ({ onExploreMarketplace }) 
   };
 
   return (
-    <section id="faq-section" className="py-20 sm:py-28 bg-white dark:bg-[#0E0F15] border-b border-zinc-200/80 dark:border-zinc-800/80 transition-colors duration-200">
+    <section id="faq-section" className="py-20 sm:py-28 bg-white dark:bg-charcoal-900 border-b border-zinc-200/80 dark:border-zinc-800/80 transition-colors duration-200">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}
         <ScrollReveal>
           <div className="text-center mb-12 sm:mb-16">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-850/60 rounded-full text-xs font-semibold text-orange-700 dark:text-orange-400 mb-4">
-              <HelpCircle className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-850/60 rounded-full text-xs font-semibold text-emerald-700 dark:text-emerald-400 mb-4">
+              <HelpCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>FREQUENTLY ASKED QUESTIONS</span>
             </div>
 
@@ -112,7 +112,7 @@ export const FaqSection: React.FC<FaqSectionProps> = ({ onExploreMarketplace }) 
                   aria-controls={`faq-answer-${item.id}`}
                 >
                   <div className="flex items-start gap-3 sm:gap-4">
-                    <span className="text-xs font-bold text-orange-600 dark:text-orange-400 font-mono-code mt-0.5 shrink-0">
+                    <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono-code mt-0.5 shrink-0">
                       0{index + 1}
                     </span>
                     <div>
@@ -127,7 +127,7 @@ export const FaqSection: React.FC<FaqSectionProps> = ({ onExploreMarketplace }) 
 
                   <div
                     className={`w-8 h-8 rounded-full border border-zinc-200 dark:border-zinc-700 flex items-center justify-center shrink-0 transition-transform duration-200 mt-1 ${
-                      isOpen ? 'bg-zinc-950 dark:bg-orange-600 text-white rotate-180' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'
+                      isOpen ? 'bg-zinc-950 dark:bg-emerald-600 text-white rotate-180' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'
                     }`}
                   >
                     <ChevronDown className="w-4 h-4" />
@@ -161,7 +161,7 @@ export const FaqSection: React.FC<FaqSectionProps> = ({ onExploreMarketplace }) 
         <ScrollReveal delay={0.2}>
           <div className="mt-12 rounded-3xl bg-zinc-950 dark:bg-zinc-900 text-white p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-xl border border-zinc-900 dark:border-zinc-800">
             <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
                 <MessageCircle className="w-5 h-5" />
               </div>
               <div>
@@ -176,7 +176,7 @@ export const FaqSection: React.FC<FaqSectionProps> = ({ onExploreMarketplace }) 
 
             <button
               onClick={onExploreMarketplace}
-              className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider shrink-0 transition-colors cursor-pointer flex items-center gap-2 shadow-sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider shrink-0 transition-colors cursor-pointer flex items-center gap-2 shadow-sm"
             >
               <span>Explore Marketplace</span>
               <ArrowRight className="w-4 h-4" />

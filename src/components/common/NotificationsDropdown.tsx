@@ -13,16 +13,16 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
   onClose,
   onNavigate
 }) => {
-  if (!isOpen) return null;
+  const { notifications, markNotificationRead, markAllNotificationsRead } = useData();
 
-  const { notifications, markNotificationAsRead, markAllNotificationsAsRead } = useData();
+  if (!isOpen) return null;
 
   const getIcon = (type: string) => {
     switch (type) {
       case 'boost': return <Zap className="w-4 h-4 text-amber-500 fill-current" />;
       case 'message': return <MessageSquare className="w-4 h-4 text-blue-500" />;
       case 'report': return <ShieldAlert className="w-4 h-4 text-rose-500" />;
-      default: return <Info className="w-4 h-4 text-orange-500" />;
+      default: return <Info className="w-4 h-4 text-emerald-500" />;
     }
   };
 
@@ -36,8 +36,8 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
           Campus Notifications
         </h4>
         <button
-          onClick={markAllNotificationsAsRead}
-          className="text-[11px] font-semibold text-orange-600 dark:text-orange-400 hover:underline"
+          onClick={markAllNotificationsRead}
+          className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
         >
           Mark all as read
         </button>
@@ -49,12 +49,12 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
             <div
               key={notif.id}
               onClick={() => {
-                markNotificationAsRead(notif.id);
+                markNotificationRead(notif.id);
                 if (notif.link) onNavigate(notif.link);
                 onClose();
               }}
               className={`p-3 rounded-2xl flex items-start gap-3 cursor-pointer transition-colors ${
-                notif.isRead ? 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40 opacity-70' : 'bg-orange-50/50 dark:bg-orange-950/20'
+                notif.isRead ? 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40 opacity-70' : 'bg-emerald-50/50 dark:bg-emerald-950/20'
               }`}
             >
               <div className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex-shrink-0">

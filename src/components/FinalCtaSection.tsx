@@ -18,14 +18,14 @@ export const FinalCtaSection: React.FC<FinalCtaSectionProps> = ({
     <section className="py-24 sm:py-32 bg-zinc-950 text-white relative overflow-hidden border-t border-zinc-900">
       
       {/* Glow orb */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-orange-600/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-emerald-600/10 rounded-full blur-[120px] pointer-events-none" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
         
         <ScrollReveal>
           {/* Micro Tag */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-semibold text-orange-400 mb-8">
-            <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-ping" />
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-semibold text-emerald-400 mb-8">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
             <span>Great Ife Digital Campus • Live</span>
           </div>
 
@@ -34,7 +34,7 @@ export const FinalCtaSection: React.FC<FinalCtaSectionProps> = ({
             <h2 className="font-display text-4xl sm:text-6xl md:text-7xl font-black uppercase tracking-tight text-white leading-none">
               Your next apartment.
             </h2>
-            <h2 className="font-display text-4xl sm:text-6xl md:text-7xl font-black uppercase tracking-tight text-orange-500 leading-none">
+            <h2 className="font-display text-4xl sm:text-6xl md:text-7xl font-black uppercase tracking-tight text-emerald-500 leading-none">
               Your next deal.
             </h2>
             <h2 className="font-display text-4xl sm:text-6xl md:text-7xl font-black uppercase tracking-tight text-white leading-none">
@@ -50,7 +50,7 @@ export const FinalCtaSection: React.FC<FinalCtaSectionProps> = ({
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
               onClick={onExploreMarketplace}
-              className="w-full sm:w-auto bg-orange-600 hover:bg-orange-500 text-white font-bold px-9 py-4 rounded-2xl text-base tracking-wide flex items-center justify-center gap-2.5 shadow-xl shadow-orange-950/40 hover:shadow-orange-600/25 active:scale-[0.98] transition-all cursor-pointer"
+              className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-9 py-4 rounded-2xl text-base tracking-wide flex items-center justify-center gap-2.5 shadow-xl shadow-emerald-950/40 hover:shadow-emerald-600/25 active:scale-[0.98] transition-all cursor-pointer"
             >
               <ShoppingBag className="w-5 h-5" />
               <span>Explore Marketplace</span>
@@ -69,7 +69,7 @@ export const FinalCtaSection: React.FC<FinalCtaSectionProps> = ({
               onClick={onOpenCreateListing}
               className="w-full sm:w-auto bg-white/10 hover:bg-white/20 text-white font-bold px-6 py-4 rounded-2xl text-base tracking-wide flex items-center justify-center gap-2 transition-all cursor-pointer"
             >
-              <PlusCircle className="w-5 h-5 text-orange-400" />
+              <PlusCircle className="w-5 h-5 text-emerald-400" />
               <span>Post Free Ad</span>
             </button>
           </div>

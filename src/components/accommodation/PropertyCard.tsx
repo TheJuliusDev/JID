@@ -2,20 +2,29 @@ import React from 'react';
 import { PropertyListing } from '../../types';
 import { BRAND_CONFIG } from '../../config/brand';
 import { useData } from '../../context/DataContext';
-import { MapPin, Heart, Zap, ShieldCheck, Droplets, ZapOff, BatteryCharging, Clock, Users } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { MapPin, Heart, Zap, Droplets, BatteryCharging, Home } from 'lucide-react';
 
 interface PropertyCardProps {
   property: PropertyListing;
   onClick: () => void;
+  onOpenProfile?: (username: string) => void;
 }
 
-export const PropertyCard: React.FC<PropertyCardProps> = ({ property, onClick }) => {
-  const { toggleSaveItem, isItemSaved } = useData();
-  const saved = isItemSaved('property', property.id);
+export const PropertyCard: React.FC<PropertyCardProps> = ({ property, onClick, onOpenProfile }) => {
+  const { toggleSave, isSaved } = useData();
+  const { isAuthenticated } = useAuth();
+  const saved = isSaved('property', property.id);
+  const cover = property.images[0];
 
   const handleSave = (e: React.MouseEvent) => {
     e.stopPropagation();
-    toggleSaveItem('property', property.id);
+    void toggleSave('property', property.id);
+  };
+
+  const handleLandlord = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onOpenProfile && property.landlord.username) onOpenProfile(property.landlord.username);
   };
 
   const getAvailabilityColor = (status: string) => {
@@ -34,44 +43,52 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, onClick })
       onClick={onClick}
       className={`group relative bg-white dark:bg-zinc-900 border rounded-3xl overflow-hidden transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 cursor-pointer flex flex-col ${
         property.isBoosted
-          ? 'border-orange-500/60 dark:border-orange-500/50 shadow-orange-500/5 ring-1 ring-orange-500/20'
+          ? 'border-emerald-500/60 dark:border-emerald-500/50 shadow-emerald-500/5 ring-1 ring-emerald-500/20'
           : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-700'
       }`}
     >
       {/* Boost Badge */}
       {property.isBoosted && (
-        <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-orange-600 to-amber-600 text-white text-[11px] font-bold tracking-wider uppercase rounded-full shadow-md">
+        <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-emerald-600 to-amber-600 text-white text-[11px] font-bold tracking-wider uppercase rounded-full shadow-md">
           <Zap className="w-3 h-3 fill-current animate-pulse" />
           <span>Featured Lodge</span>
         </div>
       )}
 
       {/* Save Button */}
-      <button
-        onClick={handleSave}
-        className={`absolute top-4 right-4 z-10 w-10 h-10 rounded-full flex items-center justify-center backdrop-blur-md transition-all ${
-          saved
-            ? 'bg-rose-500 text-white shadow-md'
-            : 'bg-white/85 dark:bg-black/60 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800'
-        }`}
-        title={saved ? 'Remove bookmark' : 'Bookmark lodge'}
-      >
-        <Heart className={`w-4 h-4 ${saved ? 'fill-current' : ''}`} />
-      </button>
+      {isAuthenticated && (
+        <button
+          onClick={handleSave}
+          className={`absolute top-4 right-4 z-10 w-10 h-10 rounded-full flex items-center justify-center backdrop-blur-md transition-all ${
+            saved
+              ? 'bg-rose-500 text-white shadow-md'
+              : 'bg-white/85 dark:bg-black/60 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800'
+          }`}
+          title={saved ? 'Remove bookmark' : 'Bookmark lodge'}
+        >
+          <Heart className={`w-4 h-4 ${saved ? 'fill-current' : ''}`} />
+        </button>
+      )}
 
       {/* Property Image Container */}
       <div className="relative aspect-[16/10] w-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
-        <img
-          src={property.images[0]}
-          alt={property.title}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-          loading="lazy"
-        />
+        {cover ? (
+          <img
+            src={cover}
+            alt={property.title}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-zinc-300 dark:text-zinc-600">
+            <Home className="w-10 h-10" />
+          </div>
+        )}
 
         {/* Distance Banner */}
         <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none">
           <span className="px-3 py-1 text-xs font-semibold bg-zinc-950/80 text-white backdrop-blur-md rounded-lg border border-white/10 flex items-center gap-1.5">
-            <MapPin className="w-3.5 h-3.5 text-orange-500" />
+            <MapPin className="w-3.5 h-3.5 text-emerald-500" />
             {property.distanceToCampus}
           </span>
           <span className="px-2.5 py-1 text-xs font-bold bg-white/90 dark:bg-zinc-900/90 text-zinc-900 dark:text-white backdrop-blur-md rounded-lg shadow-sm">
@@ -94,7 +111,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, onClick })
           </div>
 
           {/* Title */}
-          <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-base leading-snug line-clamp-1 group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">
+          <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-base leading-snug line-clamp-1 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
             {property.title}
           </h3>
 
@@ -121,10 +138,14 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({ property, onClick })
 
         {/* Caretaker / Landlord Info */}
         <div className="pt-2 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-          <span className="font-medium text-zinc-700 dark:text-zinc-300 truncate">
+          <button
+            onClick={handleLandlord}
+            className="font-medium text-zinc-700 dark:text-zinc-300 truncate text-left hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+            title={onOpenProfile ? `View ${property.landlord.name}'s profile` : undefined}
+          >
             {property.landlord.name} ({property.landlord.role})
-          </span>
-          <span className="text-orange-600 dark:text-orange-400 font-semibold group-hover:translate-x-0.5 transition-transform flex-shrink-0 ml-2">
+          </button>
+          <span className="text-emerald-600 dark:text-emerald-400 font-semibold group-hover:translate-x-0.5 transition-transform flex-shrink-0 ml-2">
             View Details &rarr;
           </span>
         </div>

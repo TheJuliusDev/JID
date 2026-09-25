@@ -1,283 +1,1013 @@
--- ==============================================================================
--- JID Campus Marketplace & Accommodation Platform
--- Production PostgreSQL Database Schema for Supabase
--- Target Institution: Obafemi Awolowo University (OAU), Ile-Ife
--- ==============================================================================
+-- ============================================================================
+-- JID — Production Database Schema
+-- OAU Student Marketplace & Accommodation Platform (https://jidapp.ng)
+-- ----------------------------------------------------------------------------
+-- Run this entire file once in the Supabase SQL Editor.
+-- It is idempotent-ish: it uses "if not exists" / "drop ... if exists" guards
+-- so re-running it is safe during setup.
+--
+-- Images are hosted on Cloudinary (not Supabase Storage), so no storage
+-- buckets/policies are required. See /supabase/README.md.
+-- ============================================================================
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- ----------------------------------------------------------------------------
+-- 0. Extensions
+-- ----------------------------------------------------------------------------
+create extension if not exists pgcrypto;      -- gen_random_uuid()
 
--- ------------------------------------------------------------------------------
--- 1. PROFILES (Extends Supabase auth.users)
--- ------------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.profiles (
-  id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-  full_name TEXT NOT NULL,
-  matric_number TEXT,
-  department TEXT NOT NULL,
-  level TEXT NOT NULL, -- e.g. '100L', '200L', '300L', '400L', '500L', 'Graduating / Stalite'
-  hall_or_area TEXT NOT NULL, -- e.g. 'Fajuyi Hall', 'Damico', 'Asherifa'
-  phone_number TEXT,
-  whatsapp_number TEXT,
-  avatar_url TEXT,
-  bio TEXT,
-  is_premium BOOLEAN DEFAULT FALSE,
-  premium_until TIMESTAMPTZ,
-  is_verified BOOLEAN DEFAULT FALSE, -- reserved for future genuine ID card verification
-  role TEXT DEFAULT 'student' CHECK (role IN ('student', 'landlord', 'agent', 'moderator', 'admin')),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+-- ----------------------------------------------------------------------------
+-- 1. Enums
+-- ----------------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'app_role') then
+    create type app_role as enum ('user', 'admin');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'listing_kind') then
+    create type listing_kind as enum ('marketplace', 'property');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'listing_category') then
+    create type listing_category as enum (
+      'electronics', 'phones', 'computers', 'books',
+      'fashion', 'furniture', 'school-supplies', 'other'
+    );
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'item_condition') then
+    create type item_condition as enum (
+      'Brand New', 'Like New', 'Good Condition', 'Well Used'
+    );
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'contact_preference') then
+    create type contact_preference as enum ('whatsapp', 'phone', 'chat', 'all');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'marketplace_status') then
+    create type marketplace_status as enum ('active', 'paused', 'sold', 'removed');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'property_room_type') then
+    create type property_room_type as enum (
+      'Self-Con', 'Single Room', '2-Bedroom Shared',
+      'Executive Studio', 'Bed Space / Hostel'
+    );
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'property_availability') then
+    create type property_availability as enum (
+      'Available Immediately', 'Next Session (2026/2027)', 'Roommate Needed'
+    );
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'property_status') then
+    create type property_status as enum ('active', 'paused', 'rented', 'removed');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'landlord_role') then
+    create type landlord_role as enum (
+      'Student Subletter', 'Lodge Caretaker', 'Direct Landlord', 'Campus Agent'
+    );
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'notification_type') then
+    create type notification_type as enum (
+      'message', 'boost', 'inquiry', 'system', 'report', 'review'
+    );
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'report_status') then
+    create type report_status as enum (
+      'pending', 'reviewing', 'resolved', 'dismissed', 'action_taken'
+    );
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'boost_status') then
+    create type boost_status as enum ('active', 'expired', 'cancelled');
+  end if;
+end$$;
+
+-- ----------------------------------------------------------------------------
+-- 2. Tables
+-- ----------------------------------------------------------------------------
+
+-- 2.1 Profiles (public-safe fields only; email lives in auth.users,
+--     contact phone numbers are opt-in *per listing*, never global)
+create table if not exists public.profiles (
+  id            uuid primary key references auth.users (id) on delete cascade,
+  username      text unique not null,
+  full_name     text not null,
+  department    text,
+  level         text,
+  hall_or_area  text,
+  avatar_url    text,
+  bio           text,
+  is_suspended  boolean not null default false,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  constraint username_format check (username ~ '^[a-zA-Z0-9_]{3,20}$')
 );
 
--- ------------------------------------------------------------------------------
--- 2. MARKETPLACE LISTINGS
--- ------------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.marketplace_listings (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  title TEXT NOT NULL,
-  description TEXT NOT NULL,
-  category TEXT NOT NULL CHECK (category IN (
-    'electronics', 'phones', 'computers', 'books', 'fashion', 'furniture', 'school-supplies', 'other'
-  )),
-  price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
-  condition TEXT NOT NULL CHECK (condition IN (
-    'Brand New', 'Like New', 'Good Condition', 'Well Used'
-  )),
-  location TEXT NOT NULL, -- Hall or campus spot
-  pickup_spot TEXT NOT NULL, -- Recommended meeting spot
-  specs JSONB DEFAULT '[]'::jsonb,
-  images TEXT[] NOT NULL DEFAULT '{}',
-  contact_preference TEXT DEFAULT 'whatsapp' CHECK (contact_preference IN ('whatsapp', 'phone', 'chat', 'all')),
-  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'paused', 'sold', 'removed')),
-  views_count INTEGER DEFAULT 0,
-  saves_count INTEGER DEFAULT 0,
-  is_boosted BOOLEAN DEFAULT FALSE,
-  boosted_until TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+-- 2.2 User roles (authorization source of truth — NEVER trust client claims)
+create table if not exists public.user_roles (
+  user_id     uuid primary key references auth.users (id) on delete cascade,
+  role        app_role not null default 'user',
+  created_at  timestamptz not null default now()
 );
 
--- ------------------------------------------------------------------------------
--- 3. PROPERTY / ACCOMMODATION LISTINGS
--- ------------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.property_listings (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  title TEXT NOT NULL,
-  description TEXT NOT NULL,
-  area TEXT NOT NULL, -- 'Asherifa', 'Damico', 'Mayfair', 'Ede Road', etc.
-  distance_to_campus TEXT NOT NULL, -- e.g. '6 mins bike to Campus Gate'
-  price_per_year NUMERIC(12, 2) NOT NULL CHECK (price_per_year > 0),
-  room_type TEXT NOT NULL CHECK (room_type IN (
-    'Self-Con', 'Single Room', '2-Bedroom Shared', 'Executive Studio', 'Bed Space / Hostel'
-  )),
-  availability TEXT NOT NULL CHECK (availability IN (
-    'Available Immediately', 'Next Session (2026/2027)', 'Roommate Needed'
-  )),
-  water_source TEXT NOT NULL,
-  power_setup TEXT NOT NULL,
-  security TEXT NOT NULL,
-  proximity_desc TEXT NOT NULL,
-  amenities TEXT[] DEFAULT '{}',
-  images TEXT[] NOT NULL DEFAULT '{}',
-  contact_phone TEXT NOT NULL,
-  contact_whatsapp TEXT,
-  is_verified BOOLEAN DEFAULT FALSE,
-  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'paused', 'rented', 'removed')),
-  views_count INTEGER DEFAULT 0,
-  saves_count INTEGER DEFAULT 0,
-  is_boosted BOOLEAN DEFAULT FALSE,
-  boosted_until TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+-- 2.3 Marketplace listings
+create table if not exists public.marketplace_listings (
+  id                 uuid primary key default gen_random_uuid(),
+  user_id            uuid not null references public.profiles (id) on delete cascade,
+  title              text not null check (char_length(title) between 3 and 120),
+  description        text not null check (char_length(description) between 10 and 4000),
+  category           listing_category not null,
+  price              numeric(12,2) not null check (price >= 0),
+  condition          item_condition not null,
+  location           text not null,
+  pickup_spot        text,
+  specs              text[] not null default '{}',
+  images             text[] not null default '{}',
+  contact_preference contact_preference not null default 'chat',
+  phone_or_whatsapp  text,
+  status             marketplace_status not null default 'active',
+  views_count        integer not null default 0,
+  saves_count        integer not null default 0,
+  boosted_until      timestamptz,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now(),
+  constraint marketplace_images_present check (array_length(images, 1) >= 1)
 );
 
--- ------------------------------------------------------------------------------
--- 4. SAVED LISTINGS (Bookmarks)
--- ------------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.saved_listings (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  listing_type TEXT NOT NULL CHECK (listing_type IN ('marketplace', 'property')),
-  listing_id UUID NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, listing_type, listing_id)
+-- 2.4 Property (accommodation) listings
+create table if not exists public.property_listings (
+  id                 uuid primary key default gen_random_uuid(),
+  user_id            uuid not null references public.profiles (id) on delete cascade,
+  title              text not null check (char_length(title) between 3 and 120),
+  description        text not null check (char_length(description) between 10 and 4000),
+  area               text not null,
+  distance_to_campus text,
+  price_per_year     numeric(12,2) not null check (price_per_year >= 0),
+  room_type          property_room_type not null,
+  availability       property_availability not null default 'Available Immediately',
+  water_source       text,
+  power_setup        text,
+  security           text,
+  proximity_desc     text,
+  amenities          text[] not null default '{}',
+  images             text[] not null default '{}',
+  contact_phone      text,
+  contact_whatsapp   text,
+  landlord_role      landlord_role not null default 'Student Subletter',
+  is_verified        boolean not null default false,   -- admin/moderation controlled only
+  status             property_status not null default 'active',
+  views_count        integer not null default 0,
+  saves_count        integer not null default 0,
+  boosted_until      timestamptz,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now(),
+  constraint property_images_present check (array_length(images, 1) >= 1)
 );
 
--- ------------------------------------------------------------------------------
--- 5. MESSAGES (Campus In-App Chat)
--- ------------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.messages (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  sender_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  receiver_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  listing_type TEXT CHECK (listing_type IN ('marketplace', 'property')),
-  listing_id UUID,
-  content TEXT NOT NULL,
-  is_read BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+-- 2.5 Saved listings (private per user)
+create table if not exists public.saved_listings (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references public.profiles (id) on delete cascade,
+  listing_type  listing_kind not null,
+  listing_id    uuid not null,
+  created_at    timestamptz not null default now(),
+  unique (user_id, listing_type, listing_id)
 );
 
--- ------------------------------------------------------------------------------
--- 6. NOTIFICATIONS
--- ------------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.notifications (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  title TEXT NOT NULL,
-  message TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('message', 'boost', 'inquiry', 'system', 'report')),
-  link TEXT,
-  is_read BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+-- 2.6 Conversations
+create table if not exists public.conversations (
+  id              uuid primary key default gen_random_uuid(),
+  listing_type    listing_kind,
+  listing_id      uuid,
+  listing_title   text,
+  listing_price   numeric(12,2),
+  listing_image   text,
+  created_by      uuid references public.profiles (id) on delete set null,
+  created_at      timestamptz not null default now(),
+  last_message_at timestamptz not null default now()
 );
 
--- ------------------------------------------------------------------------------
--- 7. BOOSTS (Voluntary Rewarded Ad Monetization)
--- ------------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.boosts (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  listing_type TEXT NOT NULL CHECK (listing_type IN ('marketplace', 'property')),
-  listing_id UUID NOT NULL,
-  ads_completed INTEGER NOT NULL DEFAULT 5,
-  started_at TIMESTAMPTZ DEFAULT NOW(),
-  expires_at TIMESTAMPTZ NOT NULL,
-  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'expired')),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+-- 2.7 Conversation participants
+create table if not exists public.conversation_participants (
+  conversation_id uuid not null references public.conversations (id) on delete cascade,
+  user_id         uuid not null references public.profiles (id) on delete cascade,
+  last_read_at    timestamptz not null default now(),
+  primary key (conversation_id, user_id)
 );
 
--- ------------------------------------------------------------------------------
--- 8. PREMIUM SUBSCRIPTIONS
--- ------------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.subscriptions (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  plan TEXT NOT NULL CHECK (plan IN ('monthly', 'semester', 'annual')),
-  amount NUMERIC(10, 2) NOT NULL,
-  payment_reference TEXT,
-  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'expired', 'cancelled')),
-  started_at TIMESTAMPTZ DEFAULT NOW(),
-  expires_at TIMESTAMPTZ NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+-- 2.8 Messages
+create table if not exists public.messages (
+  id              uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.conversations (id) on delete cascade,
+  sender_id       uuid not null references public.profiles (id) on delete cascade,
+  content         text not null check (char_length(content) between 1 and 4000),
+  created_at      timestamptz not null default now()
 );
 
--- ------------------------------------------------------------------------------
--- 9. REPORTS & SAFETY MODERATION
--- ------------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.reports (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  reporter_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-  target_type TEXT NOT NULL CHECK (target_type IN ('marketplace', 'property', 'user')),
-  target_id UUID NOT NULL,
-  reason TEXT NOT NULL,
-  details TEXT,
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'reviewed', 'dismissed', 'action_taken')),
-  moderator_notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  reviewed_at TIMESTAMPTZ
+-- 2.9 Notifications
+create table if not exists public.notifications (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references public.profiles (id) on delete cascade,
+  title       text not null,
+  body        text not null,
+  type        notification_type not null default 'system',
+  link        text,
+  is_read     boolean not null default false,
+  created_at  timestamptz not null default now()
 );
 
--- ==============================================================================
--- INDEXES FOR FAST CAMPUS SEARCHES
--- ==============================================================================
-CREATE INDEX IF NOT EXISTS idx_marketplace_category ON public.marketplace_listings(category);
-CREATE INDEX IF NOT EXISTS idx_marketplace_location ON public.marketplace_listings(location);
-CREATE INDEX IF NOT EXISTS idx_marketplace_status ON public.marketplace_listings(status);
-CREATE INDEX IF NOT EXISTS idx_marketplace_boosted ON public.marketplace_listings(is_boosted);
+-- 2.10 Vendor reviews (one review per reviewer per vendor)
+create table if not exists public.vendor_reviews (
+  id           uuid primary key default gen_random_uuid(),
+  vendor_id    uuid not null references public.profiles (id) on delete cascade,
+  reviewer_id  uuid not null references public.profiles (id) on delete cascade,
+  rating       smallint not null check (rating between 1 and 5),
+  comment      text check (comment is null or char_length(comment) <= 2000),
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  unique (vendor_id, reviewer_id),
+  constraint no_self_review check (vendor_id <> reviewer_id)
+);
 
-CREATE INDEX IF NOT EXISTS idx_property_area ON public.property_listings(area);
-CREATE INDEX IF NOT EXISTS idx_property_room_type ON public.property_listings(room_type);
-CREATE INDEX IF NOT EXISTS idx_property_status ON public.property_listings(status);
+-- 2.11 Listing reports (marketplace / property)
+create table if not exists public.listing_reports (
+  id            uuid primary key default gen_random_uuid(),
+  reporter_id   uuid references public.profiles (id) on delete set null,
+  listing_type  listing_kind not null,
+  listing_id    uuid not null,
+  listing_title text,
+  reason        text not null,
+  details       text,
+  status        report_status not null default 'pending',
+  resolved_by   uuid references public.profiles (id) on delete set null,
+  resolved_at   timestamptz,
+  created_at    timestamptz not null default now()
+);
 
-CREATE INDEX IF NOT EXISTS idx_messages_conversation ON public.messages(sender_id, receiver_id);
-CREATE INDEX IF NOT EXISTS idx_saved_user ON public.saved_listings(user_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_user ON public.notifications(user_id, is_read);
+-- 2.12 User reports (report a person / profile)
+create table if not exists public.user_reports (
+  id                uuid primary key default gen_random_uuid(),
+  reporter_id       uuid references public.profiles (id) on delete set null,
+  reported_user_id  uuid not null references public.profiles (id) on delete cascade,
+  reason            text not null,
+  details           text,
+  status            report_status not null default 'pending',
+  resolved_by       uuid references public.profiles (id) on delete set null,
+  resolved_at       timestamptz,
+  created_at        timestamptz not null default now()
+);
 
--- ==============================================================================
--- ROW LEVEL SECURITY (RLS) POLICIES
--- ==============================================================================
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.marketplace_listings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.property_listings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.saved_listings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.boosts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
+-- 2.13 Listing boosts (watch 2 ads -> 24h visibility)
+create table if not exists public.listing_boosts (
+  id            uuid primary key default gen_random_uuid(),
+  listing_type  listing_kind not null,
+  listing_id    uuid not null,
+  user_id       uuid not null references public.profiles (id) on delete cascade,
+  started_at    timestamptz not null default now(),
+  expires_at    timestamptz not null,
+  status        boost_status not null default 'active',
+  created_at    timestamptz not null default now()
+);
 
--- Profiles: Public can view profiles, users can update only their own
-CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles
-  FOR SELECT USING (true);
+-- Only one ACTIVE boost per listing at a time
+create unique index if not exists one_active_boost_per_listing
+  on public.listing_boosts (listing_type, listing_id)
+  where status = 'active';
 
-CREATE POLICY "Users can update their own profile" ON public.profiles
-  FOR UPDATE USING (auth.uid() = id);
+-- 2.14 Admin audit log
+create table if not exists public.admin_audit_log (
+  id           uuid primary key default gen_random_uuid(),
+  admin_id     uuid references public.profiles (id) on delete set null,
+  action       text not null,
+  target_type  text,
+  target_id    text,
+  details      jsonb,
+  created_at   timestamptz not null default now()
+);
 
--- Marketplace Listings: Anyone can view active listings, owners manage their own
-CREATE POLICY "Active marketplace listings are public" ON public.marketplace_listings
-  FOR SELECT USING (status = 'active' OR auth.uid() = user_id);
+-- ----------------------------------------------------------------------------
+-- 3. Indexes
+-- ----------------------------------------------------------------------------
+create index if not exists idx_market_user        on public.marketplace_listings (user_id);
+create index if not exists idx_market_status       on public.marketplace_listings (status);
+create index if not exists idx_market_category     on public.marketplace_listings (category);
+create index if not exists idx_market_created      on public.marketplace_listings (created_at desc);
+create index if not exists idx_market_boost        on public.marketplace_listings (boosted_until);
 
-CREATE POLICY "Users can insert their own marketplace listings" ON public.marketplace_listings
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
+create index if not exists idx_property_user       on public.property_listings (user_id);
+create index if not exists idx_property_status     on public.property_listings (status);
+create index if not exists idx_property_area       on public.property_listings (area);
+create index if not exists idx_property_created    on public.property_listings (created_at desc);
+create index if not exists idx_property_boost      on public.property_listings (boosted_until);
 
-CREATE POLICY "Users can update their own marketplace listings" ON public.marketplace_listings
-  FOR UPDATE USING (auth.uid() = user_id);
+create index if not exists idx_saved_user          on public.saved_listings (user_id);
+create index if not exists idx_msg_conversation    on public.messages (conversation_id, created_at);
+create index if not exists idx_cp_user             on public.conversation_participants (user_id);
+create index if not exists idx_conv_last_message   on public.conversations (last_message_at desc);
+create index if not exists idx_notif_user          on public.notifications (user_id, created_at desc);
+create index if not exists idx_reviews_vendor      on public.vendor_reviews (vendor_id);
+create index if not exists idx_boost_listing       on public.listing_boosts (listing_type, listing_id);
+create index if not exists idx_reports_status      on public.listing_reports (status);
 
-CREATE POLICY "Users can delete their own marketplace listings" ON public.marketplace_listings
-  FOR DELETE USING (auth.uid() = user_id);
+-- ----------------------------------------------------------------------------
+-- 4. Functions
+-- ----------------------------------------------------------------------------
 
--- Property Listings: Public can view active, owners manage their own
-CREATE POLICY "Active properties are public" ON public.property_listings
-  FOR SELECT USING (status = 'active' OR auth.uid() = user_id);
+-- 4.1 Generic updated_at maintenance
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
 
-CREATE POLICY "Users can insert their own property listings" ON public.property_listings
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update their own property listings" ON public.property_listings
-  FOR UPDATE USING (auth.uid() = user_id);
-
--- Saved Listings: Users view and manage only their own bookmarks
-CREATE POLICY "Users can view own saved listings" ON public.saved_listings
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert own saved listings" ON public.saved_listings
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own saved listings" ON public.saved_listings
-  FOR DELETE USING (auth.uid() = user_id);
-
--- Messages: Users can see messages where they are sender or receiver
-CREATE POLICY "Users can view their conversations" ON public.messages
-  FOR SELECT USING (auth.uid() = sender_id OR auth.uid() = receiver_id);
-
-CREATE POLICY "Users can send messages" ON public.messages
-  FOR INSERT WITH CHECK (auth.uid() = sender_id);
-
--- Notifications: Only recipient can view
-CREATE POLICY "Users view own notifications" ON public.notifications
-  FOR SELECT USING (auth.uid() = user_id);
-
--- ==============================================================================
--- AUTOMATIC PROFILE TRIGGER ON SIGNUP
--- ==============================================================================
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO public.profiles (id, full_name, avatar_url, department, level, hall_or_area)
-  VALUES (
-    new.id,
-    COALESCE(new.raw_user_meta_data->>'full_name', 'Great Ife Student'),
-    new.raw_user_meta_data->>'avatar_url',
-    COALESCE(new.raw_user_meta_data->>'department', 'Undergraduate'),
-    COALESCE(new.raw_user_meta_data->>'level', '300L'),
-    COALESCE(new.raw_user_meta_data->>'hall_or_area', 'Fajuyi Hall')
+-- 4.2 Role check (SECURITY DEFINER to avoid RLS recursion inside policies)
+create or replace function public.is_admin(uid uuid default auth.uid())
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.user_roles
+    where user_id = uid and role = 'admin'
   );
-  RETURN new;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
-CREATE OR REPLACE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+-- 4.3 Conversation membership check (SECURITY DEFINER, avoids recursive RLS)
+create or replace function public.is_conversation_participant(conv_id uuid, uid uuid default auth.uid())
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.conversation_participants
+    where conversation_id = conv_id and user_id = uid
+  );
+$$;
+
+-- 4.4 Do two users already share a conversation? (used for review anti-spam)
+create or replace function public.users_share_conversation(a uuid, b uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1
+    from public.conversation_participants p1
+    join public.conversation_participants p2
+      on p1.conversation_id = p2.conversation_id
+    where p1.user_id = a and p2.user_id = b
+  );
+$$;
+
+-- 4.5 Ownership check for a listing of either kind
+create or replace function public.owns_listing(kind listing_kind, lid uuid, uid uuid default auth.uid())
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+stable
+as $$
+declare
+  owner uuid;
+begin
+  if kind = 'marketplace' then
+    select user_id into owner from public.marketplace_listings where id = lid;
+  else
+    select user_id into owner from public.property_listings where id = lid;
+  end if;
+  return owner is not null and owner = uid;
+end;
+$$;
+
+-- 4.6 Create a profile + default role automatically on signup
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  base_username text;
+  final_username text;
+  suffix int := 0;
+begin
+  base_username := lower(coalesce(
+    nullif(new.raw_user_meta_data->>'username', ''),
+    split_part(new.email, '@', 1)
+  ));
+  -- sanitize to allowed characters
+  base_username := regexp_replace(base_username, '[^a-z0-9_]', '', 'g');
+  if char_length(base_username) < 3 then
+    base_username := 'user' || substr(replace(new.id::text, '-', ''), 1, 6);
+  end if;
+  base_username := substr(base_username, 1, 20);
+  final_username := base_username;
+
+  -- ensure uniqueness
+  while exists (select 1 from public.profiles where username = final_username) loop
+    suffix := suffix + 1;
+    final_username := substr(base_username, 1, 16) || suffix::text;
+  end loop;
+
+  insert into public.profiles (id, username, full_name, department, level, hall_or_area)
+  values (
+    new.id,
+    final_username,
+    coalesce(nullif(new.raw_user_meta_data->>'full_name', ''), final_username),
+    nullif(new.raw_user_meta_data->>'department', ''),
+    nullif(new.raw_user_meta_data->>'level', ''),
+    nullif(new.raw_user_meta_data->>'hall_or_area', '')
+  )
+  on conflict (id) do nothing;
+
+  insert into public.user_roles (user_id, role)
+  values (new.id, 'user')
+  on conflict (user_id) do nothing;
+
+  return new;
+end;
+$$;
+
+-- 4.7 Apply a boost: stamp boosted_until on the target listing
+create or replace function public.apply_boost()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.status = 'active' then
+    if new.listing_type = 'marketplace' then
+      update public.marketplace_listings
+        set boosted_until = new.expires_at
+        where id = new.listing_id;
+    else
+      update public.property_listings
+        set boosted_until = new.expires_at
+        where id = new.listing_id;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+-- 4.8 Expire boosts whose window has passed (call from pg_cron or on demand)
+create or replace function public.expire_boosts()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.listing_boosts
+    set status = 'expired'
+    where status = 'active' and expires_at <= now();
+
+  update public.marketplace_listings
+    set boosted_until = null
+    where boosted_until is not null and boosted_until <= now();
+
+  update public.property_listings
+    set boosted_until = null
+    where boosted_until is not null and boosted_until <= now();
+end;
+$$;
+
+-- 4.9 Notify other participants when a message is sent
+create or replace function public.notify_new_message()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  sender_name text;
+begin
+  select full_name into sender_name from public.profiles where id = new.sender_id;
+
+  update public.conversations
+    set last_message_at = new.created_at
+    where id = new.conversation_id;
+
+  insert into public.notifications (user_id, title, body, type, link)
+  select
+    cp.user_id,
+    coalesce(sender_name, 'New message'),
+    left(new.content, 140),
+    'message',
+    'messages'
+  from public.conversation_participants cp
+  where cp.conversation_id = new.conversation_id
+    and cp.user_id <> new.sender_id;
+
+  return new;
+end;
+$$;
+
+-- 4.10 Start or fetch a 1:1 conversation atomically (bypasses insert-RLS safely)
+create or replace function public.get_or_create_direct_conversation(
+  other_user   uuid,
+  p_listing_type  listing_kind default null,
+  p_listing_id    uuid default null,
+  p_listing_title text default null,
+  p_listing_price numeric default null,
+  p_listing_image text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+  conv_id uuid;
+begin
+  if me is null then
+    raise exception 'Not authenticated';
+  end if;
+  if other_user is null or other_user = me then
+    raise exception 'Invalid conversation target';
+  end if;
+
+  -- find an existing 1:1 conversation shared by exactly these two users
+  select c.id into conv_id
+  from public.conversations c
+  join public.conversation_participants p1 on p1.conversation_id = c.id and p1.user_id = me
+  join public.conversation_participants p2 on p2.conversation_id = c.id and p2.user_id = other_user
+  where (
+    select count(*) from public.conversation_participants p where p.conversation_id = c.id
+  ) = 2
+  order by c.created_at asc
+  limit 1;
+
+  if conv_id is not null then
+    return conv_id;
+  end if;
+
+  insert into public.conversations
+    (listing_type, listing_id, listing_title, listing_price, listing_image, created_by)
+  values
+    (p_listing_type, p_listing_id, p_listing_title, p_listing_price, p_listing_image, me)
+  returning id into conv_id;
+
+  insert into public.conversation_participants (conversation_id, user_id)
+  values (conv_id, me), (conv_id, other_user);
+
+  return conv_id;
+end;
+$$;
+
+-- 4.11 Increment a listing view counter (safe, avoids RLS write on read paths)
+create or replace function public.increment_listing_view(kind listing_kind, lid uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if kind = 'marketplace' then
+    update public.marketplace_listings set views_count = views_count + 1 where id = lid;
+  else
+    update public.property_listings set views_count = views_count + 1 where id = lid;
+  end if;
+end;
+$$;
+
+-- 4.12 Aggregated conversation list for the signed-in user (1:1 threads)
+create or replace function public.get_my_conversations()
+returns table (
+  conversation_id     uuid,
+  other_id            uuid,
+  other_username      text,
+  other_full_name     text,
+  other_avatar_url    text,
+  other_department    text,
+  other_level         text,
+  other_hall_or_area  text,
+  listing_type        listing_kind,
+  listing_id          uuid,
+  listing_title       text,
+  listing_price       numeric,
+  listing_image       text,
+  last_message_at     timestamptz,
+  last_message        text,
+  last_sender_id      uuid,
+  unread_count        bigint
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  with my as (
+    select conversation_id, last_read_at
+    from public.conversation_participants
+    where user_id = auth.uid()
+  )
+  select
+    c.id,
+    op.user_id,
+    pr.username,
+    pr.full_name,
+    pr.avatar_url,
+    pr.department,
+    pr.level,
+    pr.hall_or_area,
+    c.listing_type,
+    c.listing_id,
+    c.listing_title,
+    c.listing_price,
+    c.listing_image,
+    c.last_message_at,
+    lm.content,
+    lm.sender_id,
+    coalesce(uc.cnt, 0)
+  from my
+  join public.conversations c on c.id = my.conversation_id
+  join public.conversation_participants op
+    on op.conversation_id = c.id and op.user_id <> auth.uid()
+  join public.profiles pr on pr.id = op.user_id
+  left join lateral (
+    select content, sender_id
+    from public.messages m
+    where m.conversation_id = c.id
+    order by m.created_at desc
+    limit 1
+  ) lm on true
+  left join lateral (
+    select count(*) as cnt
+    from public.messages m
+    where m.conversation_id = c.id
+      and m.created_at > my.last_read_at
+      and m.sender_id <> auth.uid()
+  ) uc on true
+  order by c.last_message_at desc;
+$$;
+
+-- 4.13 Mark a conversation as read for the current user
+create or replace function public.mark_conversation_read(conv_id uuid)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.conversation_participants
+    set last_read_at = now()
+    where conversation_id = conv_id and user_id = auth.uid();
+$$;
+
+-- 4.x Let a signed-in user permanently delete their own account.
+-- Deleting the auth.users row cascades to profiles and all owned data.
+create or replace function public.delete_my_account()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid := auth.uid();
+begin
+  if uid is null then
+    raise exception 'Not authenticated';
+  end if;
+  delete from auth.users where id = uid;
+end;
+$$;
+revoke all on function public.delete_my_account() from public, anon;
+grant execute on function public.delete_my_account() to authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 5. Triggers
+-- ----------------------------------------------------------------------------
+drop trigger if exists trg_profiles_updated on public.profiles;
+create trigger trg_profiles_updated before update on public.profiles
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_market_updated on public.marketplace_listings;
+create trigger trg_market_updated before update on public.marketplace_listings
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_property_updated on public.property_listings;
+create trigger trg_property_updated before update on public.property_listings
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_reviews_updated on public.vendor_reviews;
+create trigger trg_reviews_updated before update on public.vendor_reviews
+  for each row execute function public.set_updated_at();
+
+-- Prevent non-admins from changing their own suspension flag
+create or replace function public.protect_suspension()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.is_suspended is distinct from old.is_suspended and not public.is_admin(auth.uid()) then
+    raise exception 'Only administrators can change suspension status';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_protect_suspension on public.profiles;
+create trigger trg_protect_suspension before update on public.profiles
+  for each row execute function public.protect_suspension();
+
+-- Create profile on new auth user
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Apply boost window to the listing
+drop trigger if exists trg_apply_boost on public.listing_boosts;
+create trigger trg_apply_boost after insert on public.listing_boosts
+  for each row execute function public.apply_boost();
+
+-- Message fan-out (notifications + conversation bump)
+drop trigger if exists trg_notify_message on public.messages;
+create trigger trg_notify_message after insert on public.messages
+  for each row execute function public.notify_new_message();
+
+-- ----------------------------------------------------------------------------
+-- 6. Views  (public storefront profile — no private data)
+-- ----------------------------------------------------------------------------
+create or replace view public.public_profiles as
+  select
+    p.id,
+    p.username,
+    p.full_name,
+    p.department,
+    p.level,
+    p.hall_or_area,
+    p.avatar_url,
+    p.bio,
+    p.created_at,
+    coalesce(r.avg_rating, 0)::numeric(3,2) as avg_rating,
+    coalesce(r.review_count, 0)             as review_count
+  from public.profiles p
+  left join (
+    select vendor_id, avg(rating) as avg_rating, count(*) as review_count
+    from public.vendor_reviews
+    group by vendor_id
+  ) r on r.vendor_id = p.id
+  where p.is_suspended = false;
+
+-- ----------------------------------------------------------------------------
+-- 7. Row Level Security
+-- ----------------------------------------------------------------------------
+alter table public.profiles                 enable row level security;
+alter table public.user_roles               enable row level security;
+alter table public.marketplace_listings     enable row level security;
+alter table public.property_listings        enable row level security;
+alter table public.saved_listings           enable row level security;
+alter table public.conversations            enable row level security;
+alter table public.conversation_participants enable row level security;
+alter table public.messages                  enable row level security;
+alter table public.notifications             enable row level security;
+alter table public.vendor_reviews            enable row level security;
+alter table public.listing_reports           enable row level security;
+alter table public.user_reports              enable row level security;
+alter table public.listing_boosts            enable row level security;
+alter table public.admin_audit_log           enable row level security;
+
+-- ---- profiles ----
+drop policy if exists profiles_select on public.profiles;
+create policy profiles_select on public.profiles
+  for select using (true);  -- only public-safe columns live in this table
+
+drop policy if exists profiles_insert on public.profiles;
+create policy profiles_insert on public.profiles
+  for insert with check (auth.uid() = id);
+
+drop policy if exists profiles_update_own on public.profiles;
+create policy profiles_update_own on public.profiles
+  for update using (auth.uid() = id) with check (auth.uid() = id);
+
+drop policy if exists profiles_update_admin on public.profiles;
+create policy profiles_update_admin on public.profiles
+  for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
+
+-- ---- user_roles ----
+drop policy if exists roles_select_own on public.user_roles;
+create policy roles_select_own on public.user_roles
+  for select using (auth.uid() = user_id or public.is_admin(auth.uid()));
+
+drop policy if exists roles_admin_write on public.user_roles;
+create policy roles_admin_write on public.user_roles
+  for all using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
+
+-- ---- marketplace_listings ----
+drop policy if exists market_select on public.marketplace_listings;
+create policy market_select on public.marketplace_listings
+  for select using (
+    status <> 'removed' or auth.uid() = user_id or public.is_admin(auth.uid())
+  );
+
+drop policy if exists market_insert on public.marketplace_listings;
+create policy market_insert on public.marketplace_listings
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists market_update on public.marketplace_listings;
+create policy market_update on public.marketplace_listings
+  for update using (auth.uid() = user_id or public.is_admin(auth.uid()))
+  with check (auth.uid() = user_id or public.is_admin(auth.uid()));
+
+drop policy if exists market_delete on public.marketplace_listings;
+create policy market_delete on public.marketplace_listings
+  for delete using (auth.uid() = user_id or public.is_admin(auth.uid()));
+
+-- ---- property_listings ----
+drop policy if exists property_select on public.property_listings;
+create policy property_select on public.property_listings
+  for select using (
+    status <> 'removed' or auth.uid() = user_id or public.is_admin(auth.uid())
+  );
+
+drop policy if exists property_insert on public.property_listings;
+create policy property_insert on public.property_listings
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists property_update on public.property_listings;
+create policy property_update on public.property_listings
+  for update using (auth.uid() = user_id or public.is_admin(auth.uid()))
+  with check (auth.uid() = user_id or public.is_admin(auth.uid()));
+
+drop policy if exists property_delete on public.property_listings;
+create policy property_delete on public.property_listings
+  for delete using (auth.uid() = user_id or public.is_admin(auth.uid()));
+
+-- ---- saved_listings (private) ----
+drop policy if exists saved_all on public.saved_listings;
+create policy saved_all on public.saved_listings
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ---- conversations ----
+drop policy if exists conv_select on public.conversations;
+create policy conv_select on public.conversations
+  for select using (
+    public.is_conversation_participant(id, auth.uid()) or public.is_admin(auth.uid())
+  );
+
+-- inserts happen via get_or_create_direct_conversation() (security definer)
+
+-- ---- conversation_participants ----
+drop policy if exists cp_select on public.conversation_participants;
+create policy cp_select on public.conversation_participants
+  for select using (
+    public.is_conversation_participant(conversation_id, auth.uid())
+    or public.is_admin(auth.uid())
+  );
+
+drop policy if exists cp_update_own on public.conversation_participants;
+create policy cp_update_own on public.conversation_participants
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ---- messages ----
+drop policy if exists messages_select on public.messages;
+create policy messages_select on public.messages
+  for select using (
+    public.is_conversation_participant(conversation_id, auth.uid())
+    or public.is_admin(auth.uid())
+  );
+
+drop policy if exists messages_insert on public.messages;
+create policy messages_insert on public.messages
+  for insert with check (
+    auth.uid() = sender_id
+    and public.is_conversation_participant(conversation_id, auth.uid())
+  );
+
+-- ---- notifications ----
+drop policy if exists notif_select on public.notifications;
+create policy notif_select on public.notifications
+  for select using (auth.uid() = user_id);
+
+drop policy if exists notif_update on public.notifications;
+create policy notif_update on public.notifications
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists notif_insert_self on public.notifications;
+create policy notif_insert_self on public.notifications
+  for insert with check (auth.uid() = user_id);
+-- cross-user notifications are created by SECURITY DEFINER triggers
+
+-- ---- vendor_reviews ----
+drop policy if exists reviews_select on public.vendor_reviews;
+create policy reviews_select on public.vendor_reviews
+  for select using (true);
+
+drop policy if exists reviews_insert on public.vendor_reviews;
+create policy reviews_insert on public.vendor_reviews
+  for insert with check (
+    auth.uid() = reviewer_id
+    and reviewer_id <> vendor_id
+    and public.users_share_conversation(auth.uid(), vendor_id)  -- anti-spam: must have interacted
+  );
+
+drop policy if exists reviews_update_own on public.vendor_reviews;
+create policy reviews_update_own on public.vendor_reviews
+  for update using (auth.uid() = reviewer_id) with check (auth.uid() = reviewer_id);
+
+drop policy if exists reviews_delete on public.vendor_reviews;
+create policy reviews_delete on public.vendor_reviews
+  for delete using (auth.uid() = reviewer_id or public.is_admin(auth.uid()));
+
+-- ---- listing_reports ----
+drop policy if exists lreports_insert on public.listing_reports;
+create policy lreports_insert on public.listing_reports
+  for insert with check (auth.uid() = reporter_id);
+
+drop policy if exists lreports_select on public.listing_reports;
+create policy lreports_select on public.listing_reports
+  for select using (auth.uid() = reporter_id or public.is_admin(auth.uid()));
+
+drop policy if exists lreports_update_admin on public.listing_reports;
+create policy lreports_update_admin on public.listing_reports
+  for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
+
+-- ---- user_reports ----
+drop policy if exists ureports_insert on public.user_reports;
+create policy ureports_insert on public.user_reports
+  for insert with check (auth.uid() = reporter_id);
+
+drop policy if exists ureports_select on public.user_reports;
+create policy ureports_select on public.user_reports
+  for select using (auth.uid() = reporter_id or public.is_admin(auth.uid()));
+
+drop policy if exists ureports_update_admin on public.user_reports;
+create policy ureports_update_admin on public.user_reports
+  for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
+
+-- ---- listing_boosts ----
+drop policy if exists boosts_select on public.listing_boosts;
+create policy boosts_select on public.listing_boosts
+  for select using (auth.uid() = user_id or public.is_admin(auth.uid()));
+
+drop policy if exists boosts_insert on public.listing_boosts;
+create policy boosts_insert on public.listing_boosts
+  for insert with check (
+    auth.uid() = user_id
+    and public.owns_listing(listing_type, listing_id, auth.uid())
+  );
+
+drop policy if exists boosts_update on public.listing_boosts;
+create policy boosts_update on public.listing_boosts
+  for update using (auth.uid() = user_id or public.is_admin(auth.uid()))
+  with check (auth.uid() = user_id or public.is_admin(auth.uid()));
+
+-- ---- admin_audit_log ----
+drop policy if exists audit_admin_only on public.admin_audit_log;
+create policy audit_admin_only on public.admin_audit_log
+  for all using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
+
+-- ----------------------------------------------------------------------------
+-- 8. Grants
+-- ----------------------------------------------------------------------------
+grant usage on schema public to anon, authenticated;
+grant select on public.public_profiles to anon, authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 9. Realtime
+--    Add the messages + conversations tables to the realtime publication so
+--    the client can subscribe to live inserts.
+-- ----------------------------------------------------------------------------
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin
+      alter publication supabase_realtime add table public.messages;
+    exception when duplicate_object then null;
+    end;
+    begin
+      alter publication supabase_realtime add table public.conversations;
+    exception when duplicate_object then null;
+    end;
+    begin
+      alter publication supabase_realtime add table public.notifications;
+    exception when duplicate_object then null;
+    end;
+  end if;
+end$$;
+
+-- ============================================================================
+-- Done. Next: create your first admin — see /supabase/README.md section 7.
+--   update public.user_roles set role = 'admin' where user_id = '<uuid>';
+-- ============================================================================
