@@ -289,7 +289,13 @@ function AppContent() {
         ) : null;
 
       case 'messages':
-        return user ? <MessagingView onOpenProfile={openProfile} onNavigateHome={() => navigate('home')} /> : null;
+        return user ? (
+          <MessagingView
+            onOpenProfile={openProfile}
+            onBack={() => navigate('dashboard')}
+            onExploreMarketplace={() => navigate('marketplace')}
+          />
+        ) : null;
 
       case 'profile':
         return user ? (

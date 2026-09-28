@@ -8,13 +8,14 @@ import { Send, MessageSquare, ShieldCheck, ArrowLeft, Loader2, CheckCheck, Tag }
 
 interface MessagingViewProps {
   onOpenProfile?: (username?: string) => void;
-  onNavigateHome?: () => void;
+  onBack?: () => void;
+  onExploreMarketplace?: () => void;
 }
 
 const formatTime = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onNavigateHome }) => {
+export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onBack, onExploreMarketplace }) => {
   const { user } = useAuth();
   const {
     conversations,
@@ -146,11 +147,11 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onN
         } w-full md:w-80 lg:w-96 md:border-r border-zinc-200 dark:border-zinc-800 flex-col min-h-0 bg-zinc-50/50 dark:bg-zinc-900/50`}
       >
         <div className="px-4 py-3.5 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 flex-shrink-0 bg-white dark:bg-zinc-900">
-          {onNavigateHome && (
+          {onBack && (
             <button
-              onClick={onNavigateHome}
+              onClick={onBack}
               className="md:hidden p-1.5 -ml-1.5 rounded-lg text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 cursor-pointer flex-shrink-0"
-              aria-label="Back to home"
+              aria-label="Back to dashboard"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -159,14 +160,14 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onN
           <span className="ml-auto text-xs font-semibold px-2.5 py-0.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded-full">
             {conversations.length}
           </span>
-          {onNavigateHome && (
+          {onBack && (
             <button
-              onClick={onNavigateHome}
+              onClick={onBack}
               className="hidden md:inline-flex items-center gap-1 text-xs font-semibold text-zinc-500 hover:text-emerald-600 transition-colors cursor-pointer"
-              aria-label="Back to home"
+              aria-label="Back to dashboard"
             >
               <ArrowLeft className="w-4 h-4" />
-              Home
+              Dashboard
             </button>
           )}
         </div>
@@ -191,9 +192,9 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onN
                 <p className="text-xs text-zinc-400 max-w-xs mt-1 mb-4">
                   When you contact a seller from a listing, your conversations will show up here.
                 </p>
-                {onNavigateHome && (
+                {onExploreMarketplace && (
                   <button
-                    onClick={onNavigateHome}
+                    onClick={onExploreMarketplace}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl cursor-pointer transition-colors"
                   >
                     Explore listings
