@@ -3,8 +3,8 @@
  *
  * The app is a real, live product — there is NO demo/offline fallback.
  * Required credentials are read from EXPO_PUBLIC_* variables (the production
- * convention), with VITE_* accepted as a fallback. Both prefixes are exposed
- * to the client bundle via `envPrefix` in vite.config.ts.
+ * convention), with VITE_* and NEXT_PUBLIC_* accepted as fallbacks. All three
+ * prefixes are exposed to the client bundle via `envPrefix` in vite.config.ts.
  *
  * If required variables are missing, `configStatus` reports it and the app
  * renders a clear configuration screen (see ConfigError) instead of starting.
@@ -15,6 +15,7 @@ export const readEnv = (name: string): string => {
   const value =
     env[`EXPO_PUBLIC_${name}`] ??
     env[`VITE_${name}`] ??
+    env[`NEXT_PUBLIC_${name}`] ??
     env[name] ??
     '';
   return typeof value === 'string' ? value.trim() : '';
@@ -31,6 +32,19 @@ export const SUPABASE_URL = readEnv('SUPABASE_URL');
 export const SUPABASE_ANON_KEY = readEnv('SUPABASE_ANON_KEY');
 export const CLOUDINARY_CLOUD_NAME = readEnv('CLOUDINARY_CLOUD_NAME');
 export const CLOUDINARY_UPLOAD_PRESET = readEnv('CLOUDINARY_UPLOAD_PRESET');
+
+/**
+ * Formspree form endpoint backing the /contact form, e.g.
+ * `https://formspree.io/f/abcdwxyz`. This is a public, submit-only endpoint —
+ * no API key or private credential is ever shipped to the browser. Set it via
+ * `EXPO_PUBLIC_FORMSPREE_ENDPOINT` (or the VITE_ / NEXT_PUBLIC_ fallbacks).
+ */
+export const FORMSPREE_ENDPOINT = readEnv('FORMSPREE_ENDPOINT');
+
+const isFormspreeEndpoint = (value: string): boolean =>
+  /^https:\/\/formspree\.io\/f\/[A-Za-z0-9]+$/.test(value);
+
+export const hasFormspreeConfig = isFormspreeEndpoint(FORMSPREE_ENDPOINT);
 
 export const hasSupabaseConfig = Boolean(
   SUPABASE_URL &&

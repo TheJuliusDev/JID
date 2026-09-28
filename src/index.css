@@ -23,6 +23,7 @@
   --color-emerald-600: #0F7358; /* primary (light) */
   --color-emerald-700: #0B5B47;
   --color-emerald-800: #094A3B;
+  --color-emerald-850: #06352A;
   --color-emerald-900: #073B30;
   --color-emerald-950: #04241D;
 
@@ -129,6 +130,22 @@ html.dark .modern-grid-pattern {
   background-image:
     linear-gradient(to right, rgba(245, 244, 240, 0.04) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(245, 244, 240, 0.04) 1px, transparent 1px);
+}
+
+/* Fast, subtle fade used by modals, dropdowns and the mobile drawer. */
+@keyframes jid-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fadeIn {
+  animation: jid-fade-in 0.18s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fadeIn {
+    animation: none;
+  }
 }
 
 /* Smooth micro-glow — emerald brand halo (legacy class name kept for compat) */

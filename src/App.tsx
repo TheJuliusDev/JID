@@ -1,30 +1,33 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider, useData } from './context/DataContext';
-import { ViewType, MarketplaceItem, PropertyListing } from './types';
+import { MarketplaceItem, PropertyListing } from './types';
 import { configStatus } from './config/env';
+import { RouterProvider, useRouter } from './router/RouterProvider';
+import { isProtectedView } from './router/routes';
 
 // Shared
 import { ConfigError } from './components/common/ConfigError';
 import { LoadingScreen } from './components/common/LoadingScreen';
+import { PageTransition } from './components/common/PageTransition';
 
 // Chrome
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 
-// Landing sections
-import { HeroSection } from './components/HeroSection';
-import { ProductExplanation } from './components/ProductExplanation';
-import { CampusLifeSection } from './components/CampusLifeSection';
-import { HowItWorksSection } from './components/HowItWorksSection';
-import { FaqSection } from './components/FaqSection';
-import { SocialProofSection } from './components/SocialProofSection';
-import { FinalCtaSection } from './components/FinalCtaSection';
+// Pages
+import { HomePage } from './pages/HomePage';
+import { MarketplacePage } from './pages/MarketplacePage';
+import { AccommodationPage } from './pages/AccommodationPage';
+import { VendorsPage } from './pages/VendorsPage';
+import { AboutPage } from './pages/AboutPage';
+import { ContactPage } from './pages/ContactPage';
+import { AuthPage } from './pages/AuthPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 
-// Platform Views
-import { MarketplaceExplorer } from './components/marketplace/MarketplaceExplorer';
-import { AccommodationExplorer } from './components/accommodation/AccommodationExplorer';
+// Product surfaces
 import { StudentDashboard } from './components/dashboard/StudentDashboard';
 import { MyListingsView } from './components/listings/MyListingsView';
 import { SavedView } from './components/saved/SavedView';
@@ -42,8 +45,7 @@ import { ListingDetailModal } from './components/marketplace/ListingDetailModal'
 import { PropertyDetailModal } from './components/accommodation/PropertyDetailModal';
 
 import { ShoppingBag, Home, PlusCircle, LayoutDashboard, MessageSquare } from 'lucide-react';
-
-const PROTECTED_VIEWS: ViewType[] = ['dashboard', 'my-listings', 'saved', 'messages', 'profile'];
+import type { LucideIcon } from 'lucide-react';
 
 export interface Seller {
   id: string;
@@ -56,12 +58,14 @@ export interface Seller {
   hallOrArea?: string;
 }
 
-function AppContent() {
-  const { user, isLoading, isAdmin } = useAuth();
-  const { startConversation, setActiveConversationId } = useData();
+type MobileNavTab =
+  | { kind: 'tab'; key: string; label: string; icon: LucideIcon; active: boolean; onSelect: () => void }
+  | { kind: 'post' };
 
-  const [currentView, setCurrentView] = useState<ViewType>('home');
-  const [publicProfileUsername, setPublicProfileUsername] = useState<string | null>(null);
+function AppContent() {
+  const { user, isLoading, isAuthenticated } = useAuth();
+  const { startConversation, setActiveConversationId } = useData();
+  const { view, username, navigate } = useRouter();
 
   // Modals
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -72,49 +76,62 @@ function AppContent() {
   const [activeItemDetail, setActiveItemDetail] = useState<MarketplaceItem | null>(null);
   const [activePropDetail, setActivePropDetail] = useState<PropertyListing | null>(null);
 
-  const navigateTo = useCallback((view: ViewType) => {
-    setCurrentView(view);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
-
-  // Emulate a direct /admin entry: a manual #admin hash routes to the admin gate,
-  // which still rejects anyone whose Supabase account lacks the admin role.
+  // Hide the mobile bottom bar while the on-screen keyboard is open, so it
+  // never covers the keyboard or crowds the focused input/field.
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   useEffect(() => {
-    const applyHash = () => {
-      if (window.location.hash.replace('#', '').toLowerCase().startsWith('admin')) {
-        setCurrentView('admin');
-      }
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let raf = 0;
+    const update = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const covered = window.innerHeight - vv.height;
+        setKeyboardVisible(window.matchMedia('(any-pointer: coarse)').matches && covered > 24);
+      });
     };
-    applyHash();
-    window.addEventListener('hashchange', applyHash);
-    return () => window.removeEventListener('hashchange', applyHash);
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    window.addEventListener('resize', update);
+    return () => {
+      cancelAnimationFrame(raf);
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
   }, []);
 
-  // Redirect away from protected views once we know the user is signed out.
+  // An unauthenticated visit to a protected surface bounces to Home + auth.
   useEffect(() => {
-    if (!isLoading && !user && PROTECTED_VIEWS.includes(currentView)) {
-      setCurrentView('home');
+    if (!isLoading && !user && isProtectedView(view)) {
+      navigate('home', { replace: true });
       setIsAuthOpen(true);
     }
-  }, [isLoading, user, currentView]);
+  }, [isLoading, user, view, navigate]);
 
-  const openProfile = useCallback((username?: string) => {
-    if (!username) return;
-    if (user && username === user.username) {
-      navigateTo('profile');
-      return;
-    }
-    setPublicProfileUsername(username);
-    navigateTo('public-profile');
-  }, [user, navigateTo]);
+  const openProfile = useCallback(
+    (targetUsername?: string) => {
+      if (!targetUsername) return;
+      if (user && targetUsername === user.username) {
+        navigate('profile');
+        return;
+      }
+      navigate('public-profile', { username: targetUsername });
+    },
+    [user, navigate]
+  );
 
-  const requireAuth = useCallback((action: () => void) => {
-    if (!user) {
-      setIsAuthOpen(true);
-      return;
-    }
-    action();
-  }, [user]);
+  const requireAuth = useCallback(
+    (action: () => void) => {
+      if (!user) {
+        setIsAuthOpen(true);
+        return;
+      }
+      action();
+    },
+    [user]
+  );
 
   const handleStartChat = useCallback(
     async (seller: Seller, item: MarketplaceItem | PropertyListing) => {
@@ -135,22 +152,28 @@ function AppContent() {
       });
       if (convId) {
         setActiveConversationId(convId);
-        navigateTo('messages');
+        navigate('messages');
       }
     },
-    [user, startConversation, setActiveConversationId, navigateTo]
+    [user, startConversation, setActiveConversationId, navigate]
   );
 
-  const openReportListing = useCallback((item: MarketplaceItem | PropertyListing) => {
-    requireAuth(() => {
-      const kind = 'roomType' in item ? 'property' : 'marketplace';
-      setReportTarget({ kind, item });
-    });
-  }, [requireAuth]);
+  const openReportListing = useCallback(
+    (item: MarketplaceItem | PropertyListing) => {
+      requireAuth(() => {
+        const kind = 'roomType' in item ? 'property' : 'marketplace';
+        setReportTarget({ kind, item });
+      });
+    },
+    [requireAuth]
+  );
 
-  const openBoost = useCallback((target: MarketplaceItem | PropertyListing) => {
-    requireAuth(() => setBoostListingTarget(target));
-  }, [requireAuth]);
+  const openBoost = useCallback(
+    (target: MarketplaceItem | PropertyListing) => {
+      requireAuth(() => setBoostListingTarget(target));
+    },
+    [requireAuth]
+  );
 
   const openEdit = useCallback((target: MarketplaceItem | PropertyListing) => {
     setActiveItemDetail(null);
@@ -164,164 +187,248 @@ function AppContent() {
     setEditTarget(null);
   }, []);
 
+  const openCreate = useCallback(() => {
+    setEditTarget(null);
+    setIsCreateOpen(true);
+  }, []);
+
+  const openCreateOrAuth = useCallback(() => requireAuth(openCreate), [requireAuth, openCreate]);
+
   // ----- Admin (secured; role verified server-side, all data behind RLS) -----
-  if (currentView === 'admin') {
-    return <AdminGate onExit={() => { window.location.hash = ''; navigateTo('home'); }} />;
+  if (view === 'admin') {
+    return <AdminGate onExit={() => navigate('home')} />;
   }
 
-  const isProtected = PROTECTED_VIEWS.includes(currentView);
-  const showProtectedLoading = isProtected && isLoading;
-  const blockedByAuth = isProtected && !isLoading && !user;
+  const blockedByAuth = isProtectedView(view) && !isLoading && !user;
+  const showProtectedLoading = isProtectedView(view) && isLoading;
+
+  // Messages is a dedicated full-screen surface: no site navbar, footer or
+  // mobile bottom bar, so the chat owns the whole viewport.
+  const isMessagesView = view === 'messages';
+
+  const renderPage = () => {
+    switch (view) {
+      case 'home':
+        return (
+          <HomePage
+            onOpenMarketplace={() => navigate('marketplace')}
+            onOpenAccommodation={() => navigate('accommodation')}
+            onOpenVendors={() => navigate('vendors')}
+            onOpenCreateListing={openCreateOrAuth}
+            onOpenProfile={openProfile}
+          />
+        );
+
+      case 'marketplace':
+        return (
+          <MarketplacePage
+            onOpenCreateListing={openCreateOrAuth}
+            onSelectItem={setActiveItemDetail}
+            onOpenProfile={openProfile}
+          />
+        );
+
+      case 'accommodation':
+        return (
+          <AccommodationPage
+            onOpenCreateListing={openCreateOrAuth}
+            onSelectProperty={setActivePropDetail}
+            onOpenProfile={openProfile}
+          />
+        );
+
+      case 'vendors':
+        return (
+          <VendorsPage onOpenCreateListing={openCreate} onOpenAuth={() => setIsAuthOpen(true)} isAuthenticated={isAuthenticated} />
+        );
+
+      case 'about':
+        return <AboutPage onContact={() => navigate('contact')} />;
+
+      case 'contact':
+        return <ContactPage />;
+
+      case 'login':
+        return <AuthPage mode="login" redirectTo="home" />;
+
+      case 'signup':
+        return <AuthPage mode="signup" redirectTo="home" />;
+
+      case 'not-found':
+        return <NotFoundPage />;
+
+      case 'dashboard':
+        return user ? (
+          <StudentDashboard
+            onNavigate={navigate}
+            onSelectItem={setActiveItemDetail}
+            onSelectProperty={setActivePropDetail}
+            onOpenCreate={openCreate}
+            onOpenBoost={openBoost}
+          />
+        ) : null;
+
+      case 'my-listings':
+        return user ? (
+          <MyListingsView
+            onOpenCreate={openCreate}
+            onOpenBoost={openBoost}
+            onEdit={openEdit}
+            onSelectItem={setActiveItemDetail}
+            onSelectProperty={setActivePropDetail}
+          />
+        ) : null;
+
+      case 'saved':
+        return user ? (
+          <SavedView
+            onSelectItem={setActiveItemDetail}
+            onSelectProperty={setActivePropDetail}
+            onExploreMarketplace={() => navigate('marketplace')}
+          />
+        ) : null;
+
+      case 'messages':
+        return user ? <MessagingView onOpenProfile={openProfile} onNavigateHome={() => navigate('home')} /> : null;
+
+      case 'profile':
+        return user ? (
+          <StudentProfileView onSelectItem={setActiveItemDetail} onNavigate={navigate} />
+        ) : null;
+
+      case 'public-profile':
+        return username ? (
+          <PublicProfileView
+            username={username}
+            onBack={() => navigate('marketplace')}
+            onSelectItem={setActiveItemDetail}
+            onSelectProperty={setActivePropDetail}
+            onStartChat={handleStartChat}
+          />
+        ) : null;
+
+      default:
+        return <NotFoundPage />;
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-sand-50 dark:bg-charcoal-950 text-zinc-950 dark:text-zinc-100 font-sans selection:bg-emerald-600 selection:text-white flex flex-col transition-colors duration-200 pb-16 sm:pb-0">
-      <Navbar
-        currentView={currentView}
-        onNavigate={navigateTo}
-        onOpenCreate={() => requireAuth(() => { setEditTarget(null); setIsCreateOpen(true); })}
-        onOpenAuth={() => setIsAuthOpen(true)}
-      />
+    <div
+      className={`min-h-screen bg-sand-50 dark:bg-charcoal-950 text-zinc-950 dark:text-zinc-100 font-sans selection:bg-emerald-600 selection:text-white flex flex-col transition-colors duration-200 ${
+        isMessagesView || keyboardVisible ? 'pb-0' : 'pb-16 sm:pb-0'
+      }`}
+    >
+      {!isMessagesView && <Navbar onNavigate={navigate} onOpenCreate={openCreateOrAuth} />}
 
-      <main className="flex-1">
+      <main className={isMessagesView ? 'flex-1 min-h-0 flex flex-col overflow-hidden' : 'flex-1'}>
         {showProtectedLoading || blockedByAuth ? (
           <LoadingScreen label={blockedByAuth ? 'Please sign in to continue…' : 'Loading…'} />
+        ) : isMessagesView ? (
+          renderPage()
         ) : (
-          <>
-            {currentView === 'home' && (
-              <>
-                <HeroSection
-                  onExploreMarketplace={() => navigateTo('marketplace')}
-                  onExploreAccommodation={() => navigateTo('accommodation')}
-                  onOpenCreateListing={() => requireAuth(() => setIsCreateOpen(true))}
-                />
-                <ProductExplanation
-                  onExploreMarketplace={() => navigateTo('marketplace')}
-                  onExploreAccommodation={() => navigateTo('accommodation')}
-                  onOpenCreateListing={() => requireAuth(() => setIsCreateOpen(true))}
-                />
-                <CampusLifeSection />
-                <HowItWorksSection
-                  onExploreMarketplace={() => navigateTo('marketplace')}
-                  onExploreAccommodation={() => navigateTo('accommodation')}
-                  onOpenCreate={() => requireAuth(() => setIsCreateOpen(true))}
-                />
-                <FaqSection onExploreMarketplace={() => navigateTo('marketplace')} />
-                <SocialProofSection />
-                <FinalCtaSection
-                  onExploreMarketplace={() => navigateTo('marketplace')}
-                  onExploreAccommodation={() => navigateTo('accommodation')}
-                  onOpenCreateListing={() => requireAuth(() => setIsCreateOpen(true))}
-                />
-              </>
-            )}
-
-            {currentView === 'marketplace' && (
-              <MarketplaceExplorer
-                onOpenCreateListing={() => requireAuth(() => setIsCreateOpen(true))}
-                onSelectItem={setActiveItemDetail}
-                onOpenProfile={openProfile}
-              />
-            )}
-
-            {currentView === 'accommodation' && (
-              <AccommodationExplorer
-                onOpenCreateListing={() => requireAuth(() => setIsCreateOpen(true))}
-                onSelectProperty={setActivePropDetail}
-                onOpenProfile={openProfile}
-              />
-            )}
-
-            {currentView === 'dashboard' && user && (
-              <StudentDashboard
-                onNavigate={navigateTo}
-                onSelectItem={setActiveItemDetail}
-                onSelectProperty={setActivePropDetail}
-                onOpenCreate={() => setIsCreateOpen(true)}
-                onOpenBoost={openBoost}
-              />
-            )}
-
-            {currentView === 'my-listings' && user && (
-              <MyListingsView
-                onOpenCreate={() => { setEditTarget(null); setIsCreateOpen(true); }}
-                onOpenBoost={openBoost}
-                onEdit={openEdit}
-                onSelectItem={setActiveItemDetail}
-                onSelectProperty={setActivePropDetail}
-              />
-            )}
-
-            {currentView === 'saved' && user && (
-              <SavedView
-                onSelectItem={setActiveItemDetail}
-                onSelectProperty={setActivePropDetail}
-                onExploreMarketplace={() => navigateTo('marketplace')}
-              />
-            )}
-
-            {currentView === 'messages' && user && (
-              <MessagingView onOpenProfile={openProfile} onNavigateHome={() => navigateTo('home')} />
-            )}
-
-            {currentView === 'profile' && user && (
-              <StudentProfileView
-                onSelectItem={setActiveItemDetail}
-                onNavigate={navigateTo}
-              />
-            )}
-
-            {currentView === 'public-profile' && publicProfileUsername && (
-              <PublicProfileView
-                username={publicProfileUsername}
-                onBack={() => navigateTo('marketplace')}
-                onSelectItem={setActiveItemDetail}
-                onSelectProperty={setActivePropDetail}
-                onStartChat={handleStartChat}
-              />
-            )}
-          </>
+          <PageTransition>{renderPage()}</PageTransition>
         )}
       </main>
 
-      <Footer onNavigate={navigateTo} onOpenCreate={() => requireAuth(() => setIsCreateOpen(true))} />
+      {!isMessagesView && <Footer onOpenCreate={openCreateOrAuth} />}
 
       {/* Mobile bottom navigation */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-around py-2.5 px-2">
-        <button
-          onClick={() => navigateTo('marketplace')}
-          className={`flex flex-col items-center gap-1 text-[10px] font-bold ${currentView === 'marketplace' ? 'text-emerald-600' : 'text-zinc-500'}`}
-        >
-          <ShoppingBag className="w-5 h-5" />
-          <span>Market</span>
-        </button>
-        <button
-          onClick={() => navigateTo('accommodation')}
-          className={`flex flex-col items-center gap-1 text-[10px] font-bold ${currentView === 'accommodation' ? 'text-emerald-600' : 'text-zinc-500'}`}
-        >
-          <Home className="w-5 h-5" />
-          <span>Lodges</span>
-        </button>
-        <button onClick={() => requireAuth(() => { setEditTarget(null); setIsCreateOpen(true); })} className="flex flex-col items-center -mt-5">
-          <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-lg shadow-emerald-600/30">
-            <PlusCircle className="w-6 h-6" />
-          </div>
-          <span className="text-[10px] font-bold text-emerald-600 mt-0.5">Post</span>
-        </button>
-        <button
-          onClick={() => navigateTo('messages')}
-          className={`flex flex-col items-center gap-1 text-[10px] font-bold ${currentView === 'messages' ? 'text-emerald-600' : 'text-zinc-500'}`}
-        >
-          <MessageSquare className="w-5 h-5" />
-          <span>Chats</span>
-        </button>
-        <button
-          onClick={() => navigateTo('dashboard')}
-          className={`flex flex-col items-center gap-1 text-[10px] font-bold ${currentView === 'dashboard' ? 'text-emerald-600' : 'text-zinc-500'}`}
-        >
-          <LayoutDashboard className="w-5 h-5" />
-          <span>Home</span>
-        </button>
-      </div>
+      <AnimatePresence>
+        {!isMessagesView && !keyboardVisible && (
+          <motion.nav
+            key="mobile-nav"
+            role="navigation"
+            aria-label="Primary"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 420, damping: 36 }}
+            className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-t border-zinc-200 dark:border-zinc-800"
+          >
+            <div className="flex items-end justify-around px-3 pt-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))]">
+              {(
+                [
+                  {
+                    kind: 'tab',
+                    key: 'market',
+                    label: 'Market',
+                    icon: ShoppingBag,
+                    active: view === 'marketplace',
+                    onSelect: () => navigate('marketplace'),
+                  },
+                  {
+                    kind: 'tab',
+                    key: 'lodges',
+                    label: 'Lodges',
+                    icon: Home,
+                    active: view === 'accommodation',
+                    onSelect: () => navigate('accommodation'),
+                  },
+                  { kind: 'post' },
+                  {
+                    kind: 'tab',
+                    key: 'chats',
+                    label: 'Chats',
+                    icon: MessageSquare,
+                    active: isMessagesView,
+                    onSelect: () => (isAuthenticated ? navigate('messages') : setIsAuthOpen(true)),
+                  },
+                  {
+                    kind: 'tab',
+                    key: 'account',
+                    label: 'Account',
+                    icon: LayoutDashboard,
+                    active: ['dashboard', 'profile', 'my-listings', 'saved'].includes(view),
+                    onSelect: () => (isAuthenticated ? navigate('dashboard') : setIsAuthOpen(true)),
+                  },
+                ] as MobileNavTab[]
+              ).map((tab) =>
+                tab.kind === 'post' ? (
+                  <motion.button
+                    key="post"
+                    type="button"
+                    whileTap={{ scale: 0.9 }}
+                    onClick={openCreateOrAuth}
+                    className="flex flex-col items-center -mt-5"
+                    aria-label="Post a listing"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-lg shadow-emerald-600/30 ring-4 ring-sand-50 dark:ring-charcoal-950">
+                      <PlusCircle className="w-6 h-6" />
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-600 mt-0.5">Post</span>
+                  </motion.button>
+                ) : (
+                  <motion.button
+                    key={tab.key}
+                    type="button"
+                    whileTap={{ scale: 0.9 }}
+                    onClick={tab.onSelect}
+                    aria-label={tab.label}
+                    aria-current={tab.active ? 'page' : undefined}
+                    className={`relative flex flex-col items-center gap-1 pt-1 text-[10px] font-bold transition-colors duration-200 ${
+                      tab.active
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    <span className="relative flex items-center justify-center w-9 h-8">
+                      {tab.active && (
+                        <motion.span
+                          layoutId="mobile-nav-active-pill"
+                          className="absolute inset-0 rounded-xl bg-emerald-50 dark:bg-emerald-950/70"
+                          transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                        />
+                      )}
+                      <tab.icon className="relative w-6 h-6" />
+                    </span>
+                    <span className="relative">{tab.label}</span>
+                  </motion.button>
+                )
+              )}
+            </div>
+          </motion.nav>
+        )}
+      </AnimatePresence>
 
       {/* Global modals */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
@@ -331,7 +438,7 @@ function AppContent() {
         onClose={closeCreate}
         editTarget={editTarget}
         onOpenBoost={openBoost}
-        onNavigate={navigateTo}
+        onNavigate={navigate}
       />
 
       {boostListingTarget && (
@@ -369,6 +476,14 @@ function AppContent() {
   );
 }
 
+function RoutedApp() {
+  return (
+    <RouterProvider>
+      <AppContent />
+    </RouterProvider>
+  );
+}
+
 export default function App() {
   if (!configStatus.ok) {
     return <ConfigError />;
@@ -377,7 +492,7 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <DataProvider>
-          <AppContent />
+          <RoutedApp />
         </DataProvider>
       </AuthProvider>
     </ThemeProvider>

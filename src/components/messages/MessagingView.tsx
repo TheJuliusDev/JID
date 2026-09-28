@@ -31,6 +31,50 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onN
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Keyboard-awareness: keep the composer above the on-screen keyboard.
+  //
+  // Modern Android (Chrome 108+, activated by `interactive-widget=resizes-content`
+  // in the viewport meta) resizes the layout viewport itself, so `h-dvh` shrinks
+  // automatically and nothing else is needed. For everything else (iOS Safari,
+  // older WebViews) we measure the `visualViewport` and pin the chat height to
+  // the visible area above the keyboard. No hardcoded keyboard heights.
+  const [chatHeight, setChatHeight] = useState<number | null>(null);
+  const keyboardShrunk = chatHeight !== null;
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let raf = 0;
+    const isCoarseTouch = () => window.matchMedia('(any-pointer: coarse)').matches;
+    const update = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        // How much of the layout viewport the keyboard/URL bar is covering.
+        const covered = window.innerHeight - vv.height;
+        setChatHeight(isCoarseTouch() && covered > 24 ? vv.height : null);
+      });
+    };
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    window.addEventListener('resize', update);
+    return () => {
+      cancelAnimationFrame(raf);
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, []);
+
+  // After the keyboard opens/closes, keep the newest message in view.
+  useEffect(() => {
+    if (!keyboardShrunk) return;
+    const id = window.setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' });
+    }, 120);
+    return () => window.clearTimeout(id);
+  }, [keyboardShrunk]);
+
   // Load history + subscribe to realtime inserts whenever the open conversation changes.
   useEffect(() => {
     if (!activeConversationId || !user?.id) {
@@ -91,20 +135,41 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onN
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto sm:px-6 sm:py-8">
-      <div className="bg-white dark:bg-zinc-900 sm:border border-zinc-200 dark:border-zinc-800 sm:rounded-3xl sm:shadow-xl overflow-hidden h-[calc(100dvh-7rem)] sm:h-[80vh] flex">
-        {/* Conversation list (full width on mobile until a chat is opened) */}
-        <div
-          className={`${
-            activeConversation ? 'hidden md:flex' : 'flex'
-          } w-full md:w-80 lg:w-96 md:border-r border-zinc-200 dark:border-zinc-800 flex-col h-full bg-zinc-50/50 dark:bg-zinc-900/50`}
-        >
-          <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
-            <h2 className="font-bold text-zinc-950 dark:text-white font-display text-lg">Campus Messages</h2>
-            <span className="text-xs font-semibold px-2.5 py-0.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded-full">
-              {conversations.length}
-            </span>
-          </div>
+    <div
+      className="h-dvh w-full min-h-0 flex bg-white dark:bg-zinc-900"
+      style={chatHeight ? { height: chatHeight } : undefined}
+    >
+      {/* Conversation list (full width on mobile until a chat is opened) */}
+      <div
+        className={`${
+          activeConversation ? 'hidden md:flex' : 'flex'
+        } w-full md:w-80 lg:w-96 md:border-r border-zinc-200 dark:border-zinc-800 flex-col min-h-0 bg-zinc-50/50 dark:bg-zinc-900/50`}
+      >
+        <div className="px-4 py-3.5 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 flex-shrink-0 bg-white dark:bg-zinc-900">
+          {onNavigateHome && (
+            <button
+              onClick={onNavigateHome}
+              className="md:hidden p-1.5 -ml-1.5 rounded-lg text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 cursor-pointer flex-shrink-0"
+              aria-label="Back to home"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
+          <h2 className="font-bold text-zinc-950 dark:text-white font-display text-base sm:text-lg">Campus Messages</h2>
+          <span className="ml-auto text-xs font-semibold px-2.5 py-0.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded-full">
+            {conversations.length}
+          </span>
+          {onNavigateHome && (
+            <button
+              onClick={onNavigateHome}
+              className="hidden md:inline-flex items-center gap-1 text-xs font-semibold text-zinc-500 hover:text-emerald-600 transition-colors cursor-pointer"
+              aria-label="Back to home"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Home
+            </button>
+          )}
+        </div>
 
           <div className="overflow-y-auto flex-1 divide-y divide-zinc-100 dark:divide-zinc-800/60">
             {conversationsLoading ? (
@@ -192,7 +257,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onN
         <div
           className={`${
             activeConversation ? 'flex' : 'hidden md:flex'
-          } flex-1 flex-col h-full bg-white dark:bg-zinc-900 min-w-0`}
+          } flex-1 flex-col min-h-0 bg-white dark:bg-zinc-900`}
         >
           {activeConversation ? (
             <>
@@ -201,7 +266,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onN
                 <div className="flex items-center gap-2.5 min-w-0">
                   <button
                     onClick={() => setActiveConversationId(null)}
-                    className="md:hidden p-1.5 -ml-1.5 rounded-lg text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 cursor-pointer flex-shrink-0"
+                    className="p-1.5 -ml-1.5 rounded-lg text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 cursor-pointer flex-shrink-0"
                     aria-label="Back to conversations"
                   >
                     <ArrowLeft className="w-5 h-5" />
@@ -306,6 +371,9 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onN
                   type="text"
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
+                  onFocus={() => {
+                    window.setTimeout(() => bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' }), 120);
+                  }}
                   placeholder="Type a message…"
                   className="flex-1 px-4 py-3 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-base sm:text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                 />
@@ -329,7 +397,6 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onN
             </div>
           )}
         </div>
-      </div>
     </div>
   );
 };

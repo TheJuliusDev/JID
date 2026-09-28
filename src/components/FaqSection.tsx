@@ -50,10 +50,10 @@ const FAQ_ITEMS: FaqItem[] = [
 ];
 
 interface FaqSectionProps {
-  onExploreMarketplace: () => void;
+  onContact: () => void;
 }
 
-export const FaqSection: React.FC<FaqSectionProps> = ({ onExploreMarketplace }) => {
+export const FaqSection: React.FC<FaqSectionProps> = ({ onContact }) => {
   const [openId, setOpenId] = useState<string | null>('faq-free');
 
   const toggleItem = (id: string) => {
@@ -169,16 +169,16 @@ export const FaqSection: React.FC<FaqSectionProps> = ({ onExploreMarketplace }) 
                   Have another question about JID?
                 </h3>
                 <p className="text-xs sm:text-sm text-zinc-400">
-                  Our student team is active on WhatsApp and happy to assist you anytime.
+                  Send us a message and the team will get back to you as soon as possible.
                 </p>
               </div>
             </div>
 
             <button
-              onClick={onExploreMarketplace}
+              onClick={onContact}
               className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider shrink-0 transition-colors cursor-pointer flex items-center gap-2 shadow-sm"
             >
-              <span>Explore Marketplace</span>
+              <span>Contact us</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

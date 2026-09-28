@@ -1,119 +1,167 @@
 import React from 'react';
-import { ShieldCheck } from 'lucide-react';
-import { BRAND_CONFIG } from '../config/brand';
-import { ViewType } from '../types';
+import { Mail, MessageCircle, Phone, ShieldCheck } from 'lucide-react';
+import { ACTIVE_CONTACT_CHANNELS, ACTIVE_SOCIALS, BRAND_CONFIG } from '../config/brand';
+import { NavLink } from '../router/RouterProvider';
+import type { ViewType } from '../types';
 
 interface FooterProps {
-  onNavigate: (view: ViewType) => void;
+  /** Opens the "post a listing" flow (auth-gated by the caller). */
   onOpenCreate: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenCreate }) => {
-  return (
-    <footer className="bg-zinc-950 text-zinc-400 border-t border-zinc-900 pt-16 pb-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Top Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-10 pb-12 border-b border-zinc-900">
-          
-          {/* Brand & Logo */}
-          <div className="md:col-span-5 space-y-4">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-display font-black text-sm shadow-sm">
-                {BRAND_CONFIG.name.charAt(0)}
-              </div>
-              <span className="font-display text-2xl font-black tracking-tight text-white">
-                {BRAND_CONFIG.name}
-              </span>
-              <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full font-mono">
-                {BRAND_CONFIG.institution.shortName} Grid
-              </span>
-            </div>
+const EXPLORE: Array<{ to: ViewType; label: string }> = [
+  { to: 'home', label: 'Home' },
+  { to: 'marketplace', label: 'Marketplace' },
+  { to: 'accommodation', label: 'Accommodation' },
+  { to: 'vendors', label: 'Vendors' },
+];
 
-            <p className="text-sm text-zinc-400 max-w-sm leading-relaxed">
-              The unified campus marketplace and accommodation platform built specifically for students of Obafemi Awolowo University (OAU), Ile-Ife.
-            </p>
+const COMPANY: Array<{ to: ViewType; label: string }> = [
+  { to: 'about', label: 'About JID' },
+  { to: 'contact', label: 'Contact' },
+];
 
-            <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-300 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Built for {BRAND_CONFIG.institution.sobriquet} students.</span>
-            </div>
-          </div>
+const ACCOUNT: Array<{ to: ViewType; label: string }> = [
+  { to: 'login', label: 'Log in' },
+  { to: 'signup', label: 'Sign up' },
+];
 
-          {/* Campus Platform Navigation */}
-          <div className="md:col-span-3 space-y-2.5 text-xs">
-            <div className="text-zinc-200 uppercase font-bold tracking-wider mb-2">
-              Explore Campus
-            </div>
-            <div>
-              <button
-                onClick={() => onNavigate('marketplace')}
-                className="text-zinc-400 hover:text-white transition-colors block py-1 text-left cursor-pointer"
-              >
-                Student Marketplace
-              </button>
-            </div>
-            <div>
-              <button
-                onClick={() => onNavigate('accommodation')}
-                className="text-zinc-400 hover:text-white transition-colors block py-1 text-left cursor-pointer"
-              >
-                Off-Campus Lodges
-              </button>
-            </div>
-            <div>
-              <button
-                onClick={() => onNavigate('dashboard')}
-                className="text-zinc-400 hover:text-white transition-colors block py-1 text-left cursor-pointer"
-              >
-                Student Dashboard
-              </button>
-            </div>
-            <div>
-              <button
-                onClick={onOpenCreate}
-                className="text-emerald-500 font-bold hover:text-emerald-400 transition-colors block py-1 text-left cursor-pointer"
-              >
-                + Post an Item or Lodge
-              </button>
-            </div>
-          </div>
+const CHANNEL_ICONS = { email: Mail, phone: Phone, whatsapp: MessageCircle } as const;
 
-          {/* Safety & OAU Landmarks */}
-          <div className="md:col-span-4 space-y-3 text-xs">
-            <div className="text-zinc-200 uppercase font-bold tracking-wider mb-2">
-              Designated Safe Spots
-            </div>
-            <p className="text-zinc-400 text-xs leading-relaxed">
-              Always schedule trades in public campus landmarks during daylight:
-            </p>
-            <ul className="text-xs text-zinc-500 space-y-1">
-              <li>• SUB Car Park & Ground Floor</li>
-              <li>• Hezekiah Oluwasanmi Library Walkway</li>
-              <li>• Motion Ground & Amphitheatre</li>
-              <li>• Faculty of Tech Spider Web</li>
-            </ul>
-
-            <div className="pt-2">
-              <span className="text-[11px] text-zinc-500">Contact: support@jidcampus.ng</span>
-            </div>
-          </div>
-
-        </div>
-
-        {/* Bottom bar */}
-        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500">
-          <div>
-            &copy; {new Date().getFullYear()} {BRAND_CONFIG.name} ({BRAND_CONFIG.institution.shortName} Campus Platform). All rights reserved.
-          </div>
-          <div className="flex items-center gap-2">
-            <span>Ile-Ife, Osun State</span>
-            <span>&bull;</span>
-            <span className="text-emerald-500 font-medium">{BRAND_CONFIG.institution.sobriquet}</span>
-          </div>
-        </div>
-
-      </div>
-    </footer>
-  );
+const channelHref = (kind: string, value: string) => {
+  if (kind === 'email') return `mailto:${value}`;
+  if (kind === 'whatsapp') return `https://wa.me/${value.replace(/[^\d]/g, '')}`;
+  return `tel:${value.replace(/[^\d+]/g, '')}`;
 };
+
+const LinkColumn: React.FC<{ heading: string; links: Array<{ to: ViewType; label: string }> }> = ({
+  heading,
+  links,
+}) => (
+  <div>
+    <div className="text-zinc-200 uppercase font-bold tracking-wider text-[11px] mb-3">{heading}</div>
+    <ul className="space-y-1.5">
+      {links.map((link) => (
+        <li key={link.to}>
+          <NavLink
+            to={link.to}
+            className="text-sm text-zinc-400 hover:text-white transition-colors block py-0.5"
+          >
+            {link.label}
+          </NavLink>
+        </li>
+      ))}
+    </ul>
+  </div>
+);
+
+/** Site-wide footer. Shown on every page; deliberately short. */
+export const Footer: React.FC<FooterProps> = ({ onOpenCreate }) => (
+  <footer className="bg-zinc-950 text-zinc-400 border-t border-zinc-900 pt-14 pb-10">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-12 gap-8 pb-10">
+        {/* Brand */}
+        <div className="col-span-2 lg:col-span-5 space-y-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-display font-black text-sm">
+              {BRAND_CONFIG.name.charAt(0)}
+            </div>
+            <span className="font-display text-2xl font-black tracking-tight text-white">{BRAND_CONFIG.name}</span>
+            <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full font-mono-code">
+              {BRAND_CONFIG.institution.shortName}
+            </span>
+          </div>
+
+          <p className="text-sm text-zinc-400 max-w-sm leading-relaxed">
+            {BRAND_CONFIG.tagline} A marketplace and accommodation platform for{' '}
+            {BRAND_CONFIG.institution.name}, {BRAND_CONFIG.institution.location}.
+          </p>
+
+          <button
+            onClick={onOpenCreate}
+            className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-500 hover:text-emerald-400 transition-colors cursor-pointer"
+          >
+            + Post an item or lodge
+          </button>
+
+          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-300 bg-zinc-900 px-3 py-1.5 rounded-full border border-zinc-800">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+            <span>Built for {BRAND_CONFIG.institution.sobriquet} students.</span>
+          </div>
+        </div>
+
+        <div className="lg:col-span-2">
+          <LinkColumn heading="Explore" links={EXPLORE} />
+        </div>
+
+        <div className="lg:col-span-2">
+          <LinkColumn heading="JID" links={COMPANY} />
+        </div>
+
+        <div className="lg:col-span-3">
+          <LinkColumn heading="Account" links={ACCOUNT} />
+
+          {ACTIVE_CONTACT_CHANNELS.length > 0 && (
+            <ul className="mt-5 space-y-1.5">
+              {ACTIVE_CONTACT_CHANNELS.map((channel) => {
+                const Icon = CHANNEL_ICONS[channel.kind];
+                return (
+                  <li key={channel.kind}>
+                    <a
+                      href={channelHref(channel.kind, channel.value)}
+                      className="text-sm text-zinc-400 hover:text-white transition-colors flex items-center gap-2"
+                    >
+                      <Icon className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      <span className="break-all">{channel.value}</span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {ACTIVE_SOCIALS.length > 0 && (
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              {ACTIVE_SOCIALS.map((social) => (
+                <a
+                  key={social.label}
+                  href={social.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-xs font-semibold text-emerald-500 hover:text-emerald-400 transition-colors"
+                >
+                  {social.label}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="pt-6 border-t border-zinc-900 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-500">
+        <div>
+          &copy; {new Date().getFullYear()} {BRAND_CONFIG.name}. All rights reserved.
+        </div>
+        <div className="flex items-center gap-2">
+          <span>{BRAND_CONFIG.institution.location}</span>
+          <span>&bull;</span>
+          <span className="text-emerald-500 font-medium">{BRAND_CONFIG.institution.sobriquet}</span>
+        </div>
+      </div>
+
+      <div className="mt-3 text-right">
+        <p className="text-[11px] text-zinc-600">
+          Developed by{' '}
+          <a
+            href="https://thejuliusdevofficial.vercel.app"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="underline underline-offset-2 decoration-zinc-700 dark:decoration-zinc-600 hover:text-emerald-400 hover:decoration-emerald-500 transition-colors"
+          >
+            thejuliusdev
+          </a>
+        </p>
+      </div>
+    </div>
+  </footer>
+);

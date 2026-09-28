@@ -16,7 +16,9 @@ import type {
   PublicProfile,
   UserProfile,
   ReportItem,
+  ListingCategory,
 } from '../types';
+import type { ItemCondition } from '../config/brand';
 
 const SELLER_EMBED = 'seller:profiles(username, full_name, department, level, hall_or_area, avatar_url)';
 const LANDLORD_EMBED = 'landlord:profiles(username, full_name, avatar_url)';
@@ -286,14 +288,14 @@ export async function getMarketplace(id: string): Promise<MarketplaceItem | null
 export interface NewMarketplaceInput {
   title: string;
   description: string;
-  category: string;
+  category: ListingCategory;
   price: number;
-  condition: string;
+  condition: ItemCondition;
   location: string;
   pickupSpot?: string;
   specs?: string[];
   images: string[];
-  contactPreference: string;
+  contactPreference: 'whatsapp' | 'phone' | 'chat' | 'all';
   phoneOrWhatsapp?: string;
 }
 

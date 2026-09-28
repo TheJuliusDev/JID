@@ -21,11 +21,13 @@ import {
   Clock,
   Package,
   Loader2,
+  Pencil,
 } from 'lucide-react';
 
 interface MyListingsViewProps {
   onOpenCreate: () => void;
   onOpenBoost: (item: MarketplaceItem | PropertyListing) => void;
+  onEdit: (item: MarketplaceItem | PropertyListing) => void;
   onSelectItem: (item: MarketplaceItem) => void;
   onSelectProperty: (property: PropertyListing) => void;
 }
@@ -37,6 +39,7 @@ type Combined =
 export const MyListingsView: React.FC<MyListingsViewProps> = ({
   onOpenCreate,
   onOpenBoost,
+  onEdit,
   onSelectItem,
   onSelectProperty,
 }) => {
@@ -307,6 +310,16 @@ export const MyListingsView: React.FC<MyListingsViewProps> = ({
                     ) : (
                       <PlayCircle className="w-5 h-5 text-emerald-600" />
                     )}
+                  </button>
+
+                  {/* Edit */}
+                  <button
+                    onClick={() => onEdit(data)}
+                    disabled={isBusy}
+                    className="p-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-xl transition-colors cursor-pointer"
+                    title="Edit listing"
+                  >
+                    <Pencil className="w-5 h-5" />
                   </button>
 
                   {/* Delete */}

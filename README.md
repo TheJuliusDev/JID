@@ -61,11 +61,36 @@ npm run build
 To connect live production services:
 
 1. Create a Supabase project and run the migration in [`supabase/schema.sql`](supabase/schema.sql).
-2. Set your environment variables in `.env`:
+2. Create a Formspree form for the contact page and copy its endpoint.
+3. Set your environment variables in `.env`:
 ```env
 VITE_SUPABASE_URL="https://your-project.supabase.co"
 VITE_SUPABASE_ANON_KEY="your-anon-key"
 VITE_CLOUDINARY_CLOUD_NAME="your-cloud-name"
 VITE_CLOUDINARY_UPLOAD_PRESET="your-preset"
+VITE_FORMSPREE_ENDPOINT="https://formspree.io/f/your-form-id"
 ```
-*(Supports both `VITE_` and `NEXT_PUBLIC_` prefixes).*
+*(Supports `EXPO_PUBLIC_`, `VITE_` and `NEXT_PUBLIC_` prefixes for every key — see [`.env.example`](.env.example). The contact form stays disabled until a Formspree endpoint is present.)*
+
+---
+
+## Pages & Routing
+
+JID is a multi-page app with real URLs (client-side routing via the History API):
+
+| Route             | Page                                   |
+| ----------------- | -------------------------------------- |
+| `/`               | Home (hero, marketplace + lodge previews, how JID works) |
+| `/marketplace`    | Marketplace explorer                   |
+| `/accommodation`  | Accommodation explorer                 |
+| `/vendors`        | How selling on JID works + signup CTA  |
+| `/about`          | About JID, social proof, FAQ           |
+| `/contact`        | Contact form + real contact channels   |
+| `/login`          | Log in                                 |
+| `/signup`         | Create an account                      |
+| `/u/:username`    | Public profile of a user/vendor        |
+| `/dashboard`, `/my-listings`, `/saved`, `/messages`, `/profile` | Authenticated member surfaces |
+
+Unknown paths fall back to a styled 404. Authenticated surfaces redirect to Home and open the sign-in modal when a signed-out visitor tries to open them.
+
+> **Hosting note:** because routing is client-side, your host must serve `index.html` for any unmatched path (SPA fallback). On Vercel/Netlify add a rewrite rule; on Render/Fly serve the app with a fallback to the built `dist/index.html`.

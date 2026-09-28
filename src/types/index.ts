@@ -228,9 +228,17 @@ export interface ReportItem {
 }
 
 export type ViewType =
+  // Public marketing pages
   | 'home'
   | 'marketplace'
   | 'accommodation'
+  | 'vendors'
+  | 'about'
+  | 'contact'
+  | 'login'
+  | 'signup'
+  | 'not-found'
+  // Authenticated product surfaces
   | 'dashboard'
   | 'my-listings'
   | 'saved'

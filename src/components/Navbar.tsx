@@ -1,38 +1,81 @@
 import React, { useState, useRef, useEffect } from 'react';
+import {
+  Bell,
+  Heart,
+  LayoutDashboard,
+  LogOut,
+  MessageSquare,
+  ShoppingBag,
+  Store,
+  User,
+  X,
+} from 'lucide-react';
 import { BRAND_CONFIG } from '../config/brand';
-import { ViewType } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { ThemeToggle } from './ThemeToggle';
 import { NotificationsDropdown } from './common/NotificationsDropdown';
-import {
-  Menu,
-  X,
-  ShoppingBag,
-  MessageSquare,
-  Bell,
-  User,
-  PlusCircle,
-  LogOut,
-  LayoutDashboard,
-  Heart,
-} from 'lucide-react';
+import { NavLink, useRouter } from '../router/RouterProvider';
+import { MAIN_NAV_VIEWS } from '../router/routes';
+import type { ViewType } from '../types';
 
 interface NavbarProps {
-  currentView: ViewType;
-  onNavigate: (view: ViewType) => void;
   onOpenCreate: () => void;
-  onOpenAuth: () => void;
+  /** Used by the notifications dropdown to jump to a related surface. */
+  onNavigate: (view: ViewType) => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenCreate, onOpenAuth }) => {
+/** Labels for the entries in `MAIN_NAV_VIEWS`, in navigation order. */
+const NAV_LABELS: Record<string, string> = {
+  home: 'Home',
+  marketplace: 'Marketplace',
+  accommodation: 'Accommodation',
+  vendors: 'Vendors',
+  about: 'About',
+  contact: 'Contact',
+};
+
+const navLabel = (view: ViewType): string => NAV_LABELS[view] ?? view;
+
+/** Local hamburger so the drawer does not depend on a heavier icon import. */
+const MenuIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <path d="M3 6h18M3 12h18M3 18h18" />
+  </svg>
+);
+
+export const Navbar: React.FC<NavbarProps> = ({ onOpenCreate, onNavigate }) => {
   const { user, isAuthenticated, logout } = useAuth();
   const { unreadMessagesCount, unreadNotificationsCount } = useData();
+  const { view, isActive } = useRouter();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [view]);
+
+  // Lock body scroll while the full-screen mobile drawer is open.
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
@@ -44,23 +87,18 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenC
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
-  const navItem = (view: ViewType, label: string) => (
-    <button
-      onClick={() => onNavigate(view)}
-      className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-        currentView === view
-          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-          : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-900'
-      }`}
-    >
-      {label}
-    </button>
-  );
+  const navLinkClass = (target: ViewType) =>
+    [
+      'relative px-3 py-2 rounded-xl text-xs sm:text-sm font-bold transition-colors whitespace-nowrap',
+      isActive(target)
+        ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60'
+        : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900',
+    ].join(' ');
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border-b border-zinc-200/80 dark:border-zinc-800/80 transition-colors duration-200">
       {/* Campus context bar */}
-      <div className="bg-zinc-950 dark:bg-black text-zinc-300 text-xs py-1.5 px-4 sm:px-8 flex items-center justify-between border-b border-zinc-900">
+      <div className="hidden sm:block bg-zinc-950 dark:bg-black text-zinc-300 text-xs py-1.5 px-4 sm:px-8 flex items-center justify-between border-b border-zinc-900">
         <div className="flex items-center gap-2.5">
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
@@ -70,39 +108,42 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenC
             Great Ife • {BRAND_CONFIG.institution.name}
           </span>
         </div>
-        <div className="flex items-center gap-3 text-[11px] font-mono-code">
-          <span className="text-zinc-400">100% Free Campus Trades</span>
-        </div>
+        <span className="text-[11px] font-mono-code text-zinc-400">100% Free Campus Trades</span>
       </div>
 
       {/* Main bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 sm:h-20 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => onNavigate('home')} className="group flex items-center gap-3 cursor-pointer text-left">
-            <div className="w-10 h-10 rounded-2xl bg-zinc-950 dark:bg-zinc-800 text-white flex items-center justify-center font-black text-xl shadow group-hover:bg-emerald-600 transition-colors">
-              {BRAND_CONFIG.name.charAt(0)}
-            </div>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="font-display text-2xl font-black tracking-tight text-zinc-950 dark:text-white group-hover:text-emerald-600 transition-colors">
-                  {BRAND_CONFIG.name}
-                </span>
-                <span className="text-[10px] font-mono-code uppercase tracking-wider text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/60 px-2 py-0.5 rounded-full font-bold">
-                  {BRAND_CONFIG.institution.shortName}
-                </span>
-              </div>
-              <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium tracking-tight">
-                Marketplace & Accommodation
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-3">
+        <NavLink to="home" className="group flex items-center gap-3 shrink-0" aria-label={`${BRAND_CONFIG.name} home`}>
+          <div className="w-10 h-10 rounded-2xl bg-zinc-950 dark:bg-zinc-800 text-white flex items-center justify-center font-black text-xl shadow group-hover:bg-emerald-600 transition-colors">
+            {BRAND_CONFIG.name.charAt(0)}
+          </div>
+          <div className="hidden sm:flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="font-display text-2xl font-black tracking-tight text-zinc-950 dark:text-white group-hover:text-emerald-600 transition-colors">
+                {BRAND_CONFIG.name}
+              </span>
+              <span className="text-[10px] font-mono-code uppercase tracking-wider text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/60 px-2 py-0.5 rounded-full font-bold">
+                {BRAND_CONFIG.institution.shortName}
               </span>
             </div>
-          </button>
-        </div>
+            <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium tracking-tight">
+              Marketplace &amp; Accommodation
+            </span>
+          </div>
+        </NavLink>
 
         {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-1 lg:gap-2 text-sm font-medium">
-          {navItem('marketplace', 'Marketplace')}
-          {navItem('accommodation', 'Accommodations')}
-          {isAuthenticated && navItem('dashboard', 'Dashboard')}
+        <nav className="hidden lg:flex items-center gap-0.5 text-sm font-medium">
+          {MAIN_NAV_VIEWS.map((target) => (
+            <NavLink
+              key={target}
+              to={target}
+              className={navLinkClass(target)}
+              activeClassName="after:absolute after:left-3 after:right-3 after:-bottom-px after:h-0.5 after:bg-emerald-500 after:rounded-full"
+            >
+              {navLabel(target)}
+            </NavLink>
+          ))}
         </nav>
 
         {/* Right controls */}
@@ -115,6 +156,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenC
                 onClick={() => onNavigate('messages')}
                 className="relative p-2.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-colors cursor-pointer"
                 title="Messages"
+                aria-label={`Messages${unreadMessagesCount > 0 ? `, ${unreadMessagesCount} unread` : ''}`}
               >
                 <MessageSquare className="w-5 h-5" />
                 {unreadMessagesCount > 0 && (
@@ -129,6 +171,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenC
                   onClick={() => setNotificationsOpen(!notificationsOpen)}
                   className="relative p-2.5 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-colors cursor-pointer"
                   title="Notifications"
+                  aria-label="Notifications"
                 >
                   <Bell className="w-5 h-5" />
                   {unreadNotificationsCount > 0 && (
@@ -148,8 +191,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenC
             onClick={onOpenCreate}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs sm:text-sm shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
           >
-            <PlusCircle className="w-4 h-4" />
-            <span>Post an Ad</span>
+            <Store className="w-4 h-4" />
+            <span className="hidden md:inline">Post an Ad</span>
+            <span className="md:hidden">Post</span>
           </button>
 
           {isAuthenticated && user ? (
@@ -157,6 +201,8 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenC
               <button
                 onClick={() => setUserDropdownOpen(!userDropdownOpen)}
                 className="flex items-center gap-2 p-1.5 rounded-2xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                aria-label="Account menu"
+                aria-expanded={userDropdownOpen}
               >
                 <div className="w-9 h-9 rounded-xl overflow-hidden bg-emerald-100 dark:bg-emerald-950 border border-emerald-500/30 flex items-center justify-center font-bold text-emerald-700">
                   {user.avatarUrl ? (
@@ -206,60 +252,137 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenC
               )}
             </div>
           ) : (
-            <button
-              onClick={onOpenAuth}
-              className="px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:border-zinc-900 text-zinc-900 dark:text-white font-bold rounded-xl text-xs"
-            >
-              Sign In
-            </button>
+            <div className="flex items-center gap-2">
+              <NavLink
+                to="login"
+                className="px-4 py-2 border border-zinc-300 dark:border-zinc-700 hover:border-zinc-900 text-zinc-900 dark:text-white font-bold rounded-xl text-xs transition-colors"
+              >
+                Log in
+              </NavLink>
+              <NavLink
+                to="signup"
+                className="hidden lg:inline-flex px-4 py-2 bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-bold rounded-xl text-xs transition-colors"
+              >
+                Sign up
+              </NavLink>
+            </div>
           )}
         </div>
 
-        {/* Mobile menu button */}
-        <div className="flex sm:hidden items-center gap-2">
+        {/* Mobile controls */}
+        <div className="flex sm:hidden items-center gap-1.5">
           <ThemeToggle />
           <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-2 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            className="p-2 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
+            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileMenuOpen}
           >
-            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            {mobileMenuOpen ? <X className="w-6 h-6" /> : <MenuIcon className="w-6 h-6" />}
           </button>
         </div>
       </div>
 
       {/* Mobile drawer */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 px-6 py-6 space-y-4 shadow-xl animate-fadeIn">
-          <div className="flex flex-col gap-2 text-sm font-semibold">
-            <button onClick={() => { setMobileMenuOpen(false); onNavigate('marketplace'); }} className="text-left py-2.5 px-3 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200 flex justify-between items-center">
-              <span>Marketplace</span>
-              <span className="text-xs text-emerald-600 font-bold">Buy & Sell</span>
-            </button>
-            <button onClick={() => { setMobileMenuOpen(false); onNavigate('accommodation'); }} className="text-left py-2.5 px-3 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200 flex justify-between items-center">
-              <span>Accommodations</span>
-              <span className="text-xs text-zinc-400">Asherifa & Damico</span>
-            </button>
+        <div className="sm:hidden fixed inset-0 top-16 z-40 bg-white dark:bg-zinc-950 animate-fadeIn overflow-y-auto">
+          <nav className="px-5 py-6 space-y-1">
+            {MAIN_NAV_VIEWS.map((target) => {
+              const active = isActive(target);
+              return (
+                <NavLink
+                  key={target}
+                  to={target}
+                  className={`flex items-center justify-between gap-3 py-3.5 px-4 rounded-2xl text-base font-semibold transition-colors ${
+                    active
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                      : 'text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-900'
+                  }`}
+                >
+                  {navLabel(target)}
+                  {active && <span className="w-2 h-2 rounded-full bg-emerald-500" />}
+                </NavLink>
+              );
+            })}
+          </nav>
 
-            {isAuthenticated ? (
-              <>
-                <button onClick={() => { setMobileMenuOpen(false); onNavigate('dashboard'); }} className="text-left py-2.5 px-3 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200">Dashboard</button>
-                <button onClick={() => { setMobileMenuOpen(false); onNavigate('my-listings'); }} className="text-left py-2.5 px-3 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200">My Listings</button>
-                <button onClick={() => { setMobileMenuOpen(false); onNavigate('saved'); }} className="text-left py-2.5 px-3 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200">Saved</button>
-                <button onClick={() => { setMobileMenuOpen(false); onNavigate('messages'); }} className="text-left py-2.5 px-3 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200 flex justify-between items-center">
-                  <span>Messages</span>
+          {isAuthenticated ? (
+            <div className="px-5 pb-6 space-y-1">
+              <div className="pt-4 mt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-1">
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onNavigate('dashboard');
+                  }}
+                  className="w-full flex items-center gap-3 py-3 px-4 rounded-2xl text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                >
+                  <LayoutDashboard className="w-4 h-4 text-emerald-600" />
+                  Dashboard
+                </button>
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onNavigate('my-listings');
+                  }}
+                  className="w-full flex items-center gap-3 py-3 px-4 rounded-2xl text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                >
+                  <ShoppingBag className="w-4 h-4 text-emerald-600" />
+                  My Listings
+                </button>
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onNavigate('saved');
+                  }}
+                  className="w-full flex items-center gap-3 py-3 px-4 rounded-2xl text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                >
+                  <Heart className="w-4 h-4 text-rose-500" />
+                  Saved
+                </button>
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onNavigate('messages');
+                  }}
+                  className="w-full flex items-center justify-between gap-3 py-3 px-4 rounded-2xl text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                >
+                  <span className="flex items-center gap-3">
+                    <MessageSquare className="w-4 h-4 text-emerald-600" />
+                    Messages
+                  </span>
                   {unreadMessagesCount > 0 && (
-                    <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-bold rounded-full">{unreadMessagesCount}</span>
+                    <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-bold rounded-full">
+                      {unreadMessagesCount}
+                    </span>
                   )}
                 </button>
-                <button onClick={() => { setMobileMenuOpen(false); onNavigate('profile'); }} className="text-left py-2.5 px-3 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200">My Profile</button>
-              </>
-            ) : (
-              <button onClick={() => { setMobileMenuOpen(false); onOpenAuth(); }} className="text-left py-2.5 px-3 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-800 dark:text-zinc-200">Sign In / Create account</button>
-            )}
-          </div>
+              </div>
+            </div>
+          ) : (
+            <div className="px-5 pb-6 grid grid-cols-2 gap-3">
+              <NavLink
+                to="login"
+                className="py-3.5 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white font-bold text-sm rounded-2xl text-center"
+              >
+                Log in
+              </NavLink>
+              <NavLink
+                to="signup"
+                className="py-3.5 bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-bold text-sm rounded-2xl text-center"
+              >
+                Sign up
+              </NavLink>
+            </div>
+          )}
 
-          <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
-            <button onClick={() => { setMobileMenuOpen(false); onOpenCreate(); }} className="w-full py-3 bg-emerald-600 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow">
+          <div className="px-5 pb-10">
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onOpenCreate();
+              }}
+              className="w-full py-3.5 bg-emerald-600 text-white font-bold text-xs uppercase tracking-wider rounded-2xl shadow cursor-pointer"
+            >
               + Post an Ad
             </button>
           </div>
@@ -268,3 +391,4 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenC
     </header>
   );
 };
+

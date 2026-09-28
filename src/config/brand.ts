@@ -23,6 +23,20 @@ export const BRAND_CONFIG = {
       return `₦${amount.toLocaleString('en-NG')}`;
     }
   },
+  /**
+   * Direct contact channels.
+   *
+   * These are intentionally empty: the website must never display a phone
+   * number, inbox or social handle that nobody is monitoring. Fill each one in
+   * only once it is genuinely live — the Contact page and Footer then render it
+   * automatically, and stay quiet while it is blank.
+   */
+  contact: {
+    email: '',
+    phone: '',
+    whatsapp: '',
+    socials: [] as Array<{ label: string; url: string }>
+  },
   categories: [
     { id: 'all', label: 'All Items', icon: 'Sparkles' },
     { id: 'electronics', label: 'Electronics', icon: 'Tv' },
@@ -131,3 +145,17 @@ export const BRAND_CONFIG = {
 export type ItemCondition = typeof BRAND_CONFIG.itemConditions[number];
 export type AccommodationType = typeof BRAND_CONFIG.accommodationTypes[number];
 export type AvailabilityStatus = typeof BRAND_CONFIG.availabilityStatuses[number];
+
+/**
+ * Direct contact channels that are actually live. Anything blank is hidden by
+ * the UI rather than rendered as a dead or invented address.
+ */
+export const ACTIVE_CONTACT_CHANNELS = [
+  { kind: 'email' as const, label: 'Email', value: BRAND_CONFIG.contact.email.trim() },
+  { kind: 'phone' as const, label: 'Phone', value: BRAND_CONFIG.contact.phone.trim() },
+  { kind: 'whatsapp' as const, label: 'WhatsApp', value: BRAND_CONFIG.contact.whatsapp.trim() },
+].filter((channel) => channel.value.length > 0);
+
+export const ACTIVE_SOCIALS = BRAND_CONFIG.contact.socials.filter(
+  (social) => social.label.trim().length > 0 && /^https?:\/\//.test(social.url)
+);
