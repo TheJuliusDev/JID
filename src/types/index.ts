@@ -142,6 +142,8 @@ export interface Message {
   senderId: string;
   content: string;
   createdAt: string;
+  /** Set once the recipient has opened/read this message (read receipt). */
+  readAt?: string;
 }
 
 export interface Conversation {
@@ -238,6 +240,10 @@ export type ViewType =
   | 'login'
   | 'signup'
   | 'not-found'
+  // Legal / policy pages (reachable from the footer and the cookie banner)
+  | 'terms'
+  | 'privacy'
+  | 'cookies'
   // Authenticated product surfaces
   | 'dashboard'
   | 'my-listings'

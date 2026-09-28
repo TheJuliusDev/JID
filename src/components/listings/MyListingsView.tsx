@@ -22,6 +22,8 @@ import {
   Package,
   Loader2,
   Pencil,
+  BadgeCheck,
+  RotateCcw,
 } from 'lucide-react';
 
 interface MyListingsViewProps {
@@ -49,7 +51,7 @@ export const MyListingsView: React.FC<MyListingsViewProps> = ({
   const [props, setProps] = useState<PropertyListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'paused'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'paused' | 'sold'>('all');
 
   useEffect(() => {
     if (!user?.id) return;
@@ -81,6 +83,8 @@ export const MyListingsView: React.FC<MyListingsViewProps> = ({
       ...props.map((prop) => ({ type: 'property' as const, data: prop })),
     ];
     if (activeTab === 'all') return list;
+    if (activeTab === 'sold')
+      return list.filter((entry) => entry.data.status === 'sold' || entry.data.status === 'rented');
     return list.filter((entry) => entry.data.status === activeTab);
   }, [items, props, activeTab]);
 
@@ -134,6 +138,64 @@ export const MyListingsView: React.FC<MyListingsViewProps> = ({
     } finally {
       setBusyId(null);
     }
+  };
+
+  const handleMarkSold = async (entry: Combined) => {
+    const isMarket = entry.type === 'marketplace';
+    const msg = isMarket
+      ? 'Mark this item as sold? It will disappear from the marketplace until you list it again.'
+      : 'Mark this lodge as rented? It will disappear from the accommodation search until you list it again.';
+    if (!window.confirm(msg)) return;
+    setBusyId(entry.data.id);
+    try {
+      if (isMarket) {
+        const next: 'sold' = 'sold';
+        await updateMarketplace(entry.data.id, { status: next });
+        setItems((prev) => prev.map((i) => (i.id === entry.data.id ? { ...i, status: next } : i)));
+      } else {
+        const next: 'rented' = 'rented';
+        await updateProperty(entry.data.id, { status: next });
+        setProps((prev) => prev.map((p) => (p.id === entry.data.id ? { ...p, status: next } : p)));
+      }
+    } catch (err) {
+      console.error('[my-listings] mark sold failed', err);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleReList = async (entry: Combined) => {
+    setBusyId(entry.data.id);
+    try {
+      if (entry.type === 'marketplace') {
+        await updateMarketplace(entry.data.id, { status: 'active' });
+        setItems((prev) => prev.map((i) => (i.id === entry.data.id ? { ...i, status: 'active' } : i)));
+      } else {
+        await updateProperty(entry.data.id, { status: 'active' });
+        setProps((prev) => prev.map((p) => (p.id === entry.data.id ? { ...p, status: 'active' } : p)));
+      }
+    } catch (err) {
+      console.error('[my-listings] relist failed', err);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const isNotAvailable = (status: string) => status === 'sold' || status === 'rented';
+
+  const statusBadge = (entry: Combined) => {
+    const { status } = entry.data;
+    const color =
+      status === 'active'
+        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+        : status === 'paused'
+          ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+          : status === 'sold' || status === 'rented'
+            ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
+            : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400';
+    const label =
+      entry.type === 'marketplace' ? status : status === 'rented' ? 'rented' : status;
+    return { color, label };
   };
 
   return (
@@ -194,7 +256,7 @@ export const MyListingsView: React.FC<MyListingsViewProps> = ({
 
       {/* Tabs */}
       <div className="flex items-center gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3">
-        {(['all', 'active', 'paused'] as const).map((tab) => (
+        {(['all', 'active', 'paused', 'sold'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -220,6 +282,8 @@ export const MyListingsView: React.FC<MyListingsViewProps> = ({
             const { type, data } = entry;
             const boostLeft = data.isBoosted ? calculateHoursLeft(data.boostedUntil) : null;
             const isBusy = busyId === data.id;
+            const taken = isNotAvailable(data.status);
+            const badge = statusBadge(entry);
             return (
               <div
                 key={data.id}
@@ -236,10 +300,21 @@ export const MyListingsView: React.FC<MyListingsViewProps> = ({
                   className="flex items-center gap-4 cursor-pointer flex-1 min-w-0"
                 >
                   <div className="relative w-20 h-20 rounded-2xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 flex-shrink-0 border border-zinc-200 dark:border-zinc-700">
-                    <img src={data.images[0]} alt={data.title} className="w-full h-full object-cover" />
+                    <img
+                      src={data.images[0]}
+                      alt={data.title}
+                      className={`w-full h-full object-cover ${taken ? 'grayscale opacity-70' : ''}`}
+                    />
                     {data.isBoosted && (
                       <div className="absolute top-1 left-1 p-1 bg-amber-500 rounded-full text-white">
                         <Zap className="w-2.5 h-2.5 fill-current" />
+                      </div>
+                    )}
+                    {taken && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="px-1.5 py-0.5 bg-rose-600 text-white text-[9px] font-black uppercase rounded-md tracking-wider -rotate-6 shadow">
+                          {data.status === 'rented' ? 'Rented' : 'Sold'}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -249,14 +324,8 @@ export const MyListingsView: React.FC<MyListingsViewProps> = ({
                       <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
                         {type === 'marketplace' ? 'Marketplace' : 'Accommodation'}
                       </span>
-                      <span
-                        className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${
-                          data.status === 'active'
-                            ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
-                            : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
-                        }`}
-                      >
-                        {data.status}
+                      <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${badge.color}`}>
+                        {badge.label}
                       </span>
                     </div>
 
@@ -282,35 +351,64 @@ export const MyListingsView: React.FC<MyListingsViewProps> = ({
 
                 {/* Action Buttons Right */}
                 <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end pt-3 sm:pt-0 border-t sm:border-t-0 border-zinc-100 dark:border-zinc-800">
-                  {/* Boost */}
-                  {data.isBoosted ? (
-                    <div className="px-3.5 py-2 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Boosted{boostLeft ? ` (${boostLeft})` : ''}</span>
-                    </div>
-                  ) : (
+                  {taken ? (
+                    /* Sold / rented — offer re-listing instead of boost/pause */
                     <button
-                      onClick={() => onOpenBoost(data)}
+                      onClick={() => handleReList(entry)}
+                      disabled={isBusy}
                       className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-amber-600 hover:from-emerald-500 hover:to-amber-500 text-white text-xs font-bold rounded-xl shadow flex items-center gap-1.5 transition-all cursor-pointer"
                     >
-                      <Zap className="w-3.5 h-3.5 fill-current" />
-                      Boost
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      List again
                     </button>
-                  )}
+                  ) : (
+                    <>
+                      {/* Boost */}
+                      {data.isBoosted ? (
+                        <div className="px-3.5 py-2 bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Boosted{boostLeft ? ` (${boostLeft})` : ''}</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => onOpenBoost(data)}
+                          className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-amber-600 hover:from-emerald-500 hover:to-amber-500 text-white text-xs font-bold rounded-xl shadow flex items-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <Zap className="w-3.5 h-3.5 fill-current" />
+                          Boost
+                        </button>
+                      )}
 
-                  {/* Pause/Resume */}
-                  <button
-                    onClick={() => handleTogglePause(entry)}
-                    disabled={isBusy}
-                    className="p-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
-                    title={data.status === 'active' ? 'Pause listing' : 'Activate listing'}
-                  >
-                    {data.status === 'active' ? (
-                      <PauseCircle className="w-5 h-5 text-amber-600" />
-                    ) : (
-                      <PlayCircle className="w-5 h-5 text-emerald-600" />
-                    )}
-                  </button>
+                      {/* Pause/Resume */}
+                      <button
+                        onClick={() => handleTogglePause(entry)}
+                        disabled={isBusy}
+                        className="p-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
+                        title={data.status === 'active' ? 'Pause listing' : 'Activate listing'}
+                      >
+                        {data.status === 'active' ? (
+                          <PauseCircle className="w-5 h-5 text-amber-600" />
+                        ) : (
+                          <PlayCircle className="w-5 h-5 text-emerald-600" />
+                        )}
+                      </button>
+
+                      {/* Mark as sold / rented */}
+                      <button
+                        onClick={() => handleMarkSold(entry)}
+                        disabled={isBusy}
+                        className="px-3 py-2 bg-white dark:bg-zinc-800 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+                        title={
+                          type === 'marketplace'
+                            ? 'Mark as sold — hides it from the marketplace'
+                            : 'Mark as rented — hides it from the accommodation search'
+                        }
+                      >
+                        <BadgeCheck className="w-4 h-4" />
+                        {type === 'marketplace' ? 'Sold' : 'Rented'}
+                      </button>
+                    </>
+                  )}
 
                   {/* Edit */}
                   <button

@@ -4,6 +4,7 @@ import { WhatIsJid } from '../components/home/WhatIsJid';
 import { MarketplacePreview } from '../components/home/MarketplacePreview';
 import { AccommodationPreview } from '../components/home/AccommodationPreview';
 import { VendorHighlight } from '../components/home/VendorHighlight';
+import { AgencyFeesSection } from '../components/home/AgencyFeesSection';
 import { FinalCtaSection } from '../components/FinalCtaSection';
 
 interface HomePageProps {
@@ -44,6 +45,8 @@ export const HomePage: React.FC<HomePageProps> = ({
       onOpenCreateListing={onOpenCreateListing}
       onOpenProfile={onOpenProfile}
     />
+
+    <AgencyFeesSection onOpenAccommodation={onOpenAccommodation} />
 
     <AccommodationPreview
       onOpenAccommodation={onOpenAccommodation}

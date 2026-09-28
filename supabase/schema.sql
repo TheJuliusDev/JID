@@ -211,6 +211,14 @@ create table if not exists public.messages (
   created_at      timestamptz not null default now()
 );
 
+alter table public.messages
+  add column if not exists read_at timestamptz;
+
+-- Read receipts: find unread messages sent to a student quickly.
+create index if not exists messages_read_pending_idx
+  on public.messages (conversation_id)
+  where read_at is null;
+
 -- 2.9 Notifications
 create table if not exists public.notifications (
   id          uuid primary key default gen_random_uuid(),
@@ -893,6 +901,19 @@ create policy messages_insert on public.messages
   for insert with check (
     auth.uid() = sender_id
     and public.is_conversation_participant(conversation_id, auth.uid())
+  );
+
+-- Participants may only stamp the read_at on messages they received
+-- (never on their own sent messages).
+drop policy if exists messages_update_read_at on public.messages;
+create policy messages_update_read_at on public.messages
+  for update using (
+    public.is_conversation_participant(conversation_id, auth.uid())
+    and sender_id <> auth.uid()
+  )
+  with check (
+    public.is_conversation_participant(conversation_id, auth.uid())
+    and sender_id <> auth.uid()
   );
 
 -- ---- notifications ----

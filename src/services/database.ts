@@ -129,7 +129,34 @@ function mapMessage(row: any): Message {
     senderId: row.sender_id,
     content: row.content,
     createdAt: row.created_at,
+    readAt: row.read_at || undefined,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Photo messages
+//
+// A photo message stores the Cloudinary HTTPS URL as its `content`, prefixed
+// with PHOTO_MESSAGE_PREFIX. Text content is never prefixed, so existing data
+// and realtime inserts keep working without any schema change.
+// ---------------------------------------------------------------------------
+export const PHOTO_MESSAGE_PREFIX = 'jid://photo/';
+
+export function isPhotoMessage(content: string): boolean {
+  return content.startsWith(PHOTO_MESSAGE_PREFIX);
+}
+
+export function photoMessageUrl(content: string): string {
+  return content.slice(PHOTO_MESSAGE_PREFIX.length);
+}
+
+export function photoMessageContent(url: string): string {
+  return `${PHOTO_MESSAGE_PREFIX}${url}`;
+}
+
+/** Human-friendly preview of a message body (photos are never shown as URLs). */
+export function messageSummary(content: string): string {
+  return isPhotoMessage(content) ? 'Sent a photo' : content;
 }
 
 function mapNotification(row: any): NotificationItem {
@@ -616,6 +643,36 @@ export async function fetchMessages(conversationId: string, limit = 50): Promise
   return (data || []).map(mapMessage).reverse();
 }
 
+/** Load an earlier page of history (builds on `fetchMessages` via a created_at cursor). */
+export async function fetchMessagesBefore(
+  conversationId: string,
+  beforeCreatedAt: string,
+  limit = 50
+): Promise<Message[]> {
+  const sb = requireSupabase();
+  const { data, error } = await sb
+    .from('messages')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .lt('created_at', beforeCreatedAt)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data || []).map(mapMessage).reverse();
+}
+
+/** Ack the other participant's messages in this thread as read (read receipt). */
+export async function markThreadRead(conversationId: string, userId: string) {
+  const sb = requireSupabase();
+  const { error } = await sb
+    .from('messages')
+    .update({ read_at: new Date().toISOString() })
+    .eq('conversation_id', conversationId)
+    .neq('sender_id', userId)
+    .is('read_at', null);
+  if (error) throw error;
+}
+
 export async function sendMessage(conversationId: string, senderId: string, content: string): Promise<Message> {
   const sb = requireSupabase();
   const { data, error } = await sb
@@ -632,7 +689,11 @@ export async function markConversationRead(conversationId: string) {
   await sb.rpc('mark_conversation_read', { conv_id: conversationId });
 }
 
-export function subscribeToMessages(conversationId: string, onInsert: (m: Message) => void): () => void {
+export function subscribeToMessages(
+  conversationId: string,
+  onInsert: (m: Message) => void,
+  onUpdate?: (m: Message) => void
+): () => void {
   const sb = requireSupabase();
   const channel = sb
     .channel(`messages:${conversationId}`)
@@ -640,8 +701,15 @@ export function subscribeToMessages(conversationId: string, onInsert: (m: Messag
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
       (payload) => onInsert(mapMessage(payload.new))
-    )
-    .subscribe();
+    );
+  if (onUpdate) {
+    channel.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+      (payload) => onUpdate(mapMessage(payload.new))
+    );
+  }
+  channel.subscribe();
   return () => {
     sb.removeChannel(channel);
   };

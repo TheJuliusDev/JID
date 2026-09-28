@@ -63,9 +63,12 @@ export const Footer: React.FC<FooterProps> = ({ onOpenCreate }) => (
         {/* Brand */}
         <div className="col-span-2 lg:col-span-5 space-y-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-display font-black text-sm">
-              {BRAND_CONFIG.name.charAt(0)}
-            </div>
+            <img
+              src="/apple-touch-icon.png"
+              alt=""
+              draggable={false}
+              className="w-8 h-8 rounded-xl object-cover"
+            />
             <span className="font-display text-2xl font-black tracking-tight text-white">{BRAND_CONFIG.name}</span>
             <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full font-mono-code">
               {BRAND_CONFIG.institution.shortName}

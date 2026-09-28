@@ -84,7 +84,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
             <h1 className="font-display text-4xl sm:text-6xl md:text-[62px] font-black tracking-tight text-zinc-950 dark:text-white leading-[1.05] mb-6">
               Buy, sell & find lodges around OAU{' '}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-amber-600 dark:from-emerald-500 dark:to-amber-400">
-                without the WhatsApp chaos.
+                without the expensive agency fees.
               </span>
             </h1>
 

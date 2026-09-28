@@ -145,9 +145,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCreate, onNavigate }) => {
           className="group flex items-center gap-3 shrink-0 flex-1 min-w-0"
           aria-label={`${BRAND_CONFIG.name} home`}
         >
-          <div className="w-10 h-10 rounded-2xl bg-zinc-950 dark:bg-zinc-800 text-white flex items-center justify-center font-black text-xl shadow group-hover:bg-emerald-600 transition-colors">
-            {BRAND_CONFIG.name.charAt(0)}
-          </div>
+          <img
+            src="/apple-touch-icon.png"
+            alt=""
+            draggable={false}
+            className="w-10 h-10 rounded-2xl object-cover flex-shrink-0 group-hover:opacity-90 transition-opacity"
+          />
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2">
               <span className="font-display text-xl sm:text-2xl font-black tracking-tight text-zinc-950 dark:text-white group-hover:text-emerald-600 transition-colors truncate">
@@ -346,9 +349,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCreate, onNavigate }) => {
               {/* Drawer header */}
               <div className="px-5 pt-5 pb-4 border-b border-zinc-100 dark:border-zinc-800 flex items-start justify-between gap-3 flex-shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-2xl bg-zinc-950 dark:bg-zinc-800 text-white flex items-center justify-center font-black text-lg flex-shrink-0">
-                    {BRAND_CONFIG.name.charAt(0)}
-                  </div>
+                  <img
+                    src="/apple-touch-icon.png"
+                    alt=""
+                    draggable={false}
+                    className="w-10 h-10 rounded-2xl object-cover flex-shrink-0"
+                  />
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-display font-black text-xl tracking-tight text-zinc-950 dark:text-white truncate">

@@ -4,6 +4,8 @@ import { BRAND_CONFIG } from '../../config/brand';
 import { useAuth } from '../../context/AuthContext';
 import { listMarketplaceByUser, listPropertiesByUser } from '../../services/database';
 import { MarketplaceCard } from '../marketplace/MarketplaceCard';
+import { AvatarUploader } from './AvatarUploader';
+import { Toast } from '../Toast';
 import {
   MapPin,
   GraduationCap,
@@ -58,6 +60,18 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ onSelect
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Avatar toast feedback
+  const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
+
+  const handleAvatarChange = async (url: string | null) => {
+    const res = await updateProfile({ avatarUrl: url || '' });
+    if (res.success) {
+      setToast({ title: 'Profile photo updated', message: 'Your new photo is live across your listings and chats.' });
+    } else {
+      setToast({ title: 'Could not update photo', message: res.error || 'Please try again.' });
+    }
+  };
 
   useEffect(() => {
     if (!user?.id) return;
@@ -157,15 +171,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ onSelect
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-sm">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
           <div className="flex items-center gap-5">
-            <div className="relative w-24 h-24 rounded-full overflow-hidden bg-emerald-100 dark:bg-emerald-950 border-2 border-emerald-500/30 flex-shrink-0">
-              {user.avatarUrl ? (
-                <img src={user.avatarUrl} alt={user.fullName} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center font-bold text-2xl text-emerald-600">
-                  {user.fullName.charAt(0).toUpperCase()}
-                </div>
-              )}
-            </div>
+            <AvatarUploader name={user.fullName} avatarUrl={user.avatarUrl} onChange={handleAvatarChange} />
 
             <div className="space-y-1">
               <h1 className="text-2xl font-bold text-zinc-950 dark:text-white font-display">{user.fullName}</h1>
@@ -281,6 +287,32 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ onSelect
         </div>
       ) : (
         <div className="space-y-6">
+          {/* Profile photo */}
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-sm">
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-white font-display flex items-center gap-2">
+              <Edit3 className="w-4 h-4 text-emerald-600" />
+              Profile Photo
+            </h3>
+            <div className="mt-5 flex flex-col sm:flex-row items-start sm:items-center gap-6">
+              <AvatarUploader
+                name={user.fullName}
+                avatarUrl={user.avatarUrl}
+                showRemove
+                onChange={handleAvatarChange}
+              />
+              <div className="text-xs text-zinc-500 dark:text-zinc-400 space-y-1.5">
+                <p className="font-semibold text-zinc-700 dark:text-zinc-300">
+                  Your photo shows next to your listings, profile and chats.
+                </p>
+                <p>Tap the camera icon to upload. JPG, PNG or WEBP — up to 10MB.</p>
+                <p className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  Uploads go to a secure media host, never your device gallery.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Edit profile */}
           <form onSubmit={handleSaveProfile} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
@@ -494,6 +526,14 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ onSelect
           </div>
         </div>
       )}
+
+      <Toast
+        isVisible={Boolean(toast)}
+        onClose={() => setToast(null)}
+        title={toast?.title || ''}
+        message={toast?.message || ''}
+        duration={4200}
+      />
     </div>
   );
 };

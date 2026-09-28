@@ -32,6 +32,12 @@ export const ROUTES: RouteDef[] = [
   { view: 'login', path: '/login', title: 'Log in' },
   { view: 'signup', path: '/signup', title: 'Sign up' },
 
+  // Legal — deliberately kept out of `inMainNav`; linked from the footer and
+  // from the cookie banner so they are always reachable.
+  { view: 'terms', path: '/terms', title: 'Terms & Conditions' },
+  { view: 'privacy', path: '/privacy', title: 'Privacy Policy' },
+  { view: 'cookies', path: '/cookies', title: 'Cookie Policy' },
+
   { view: 'dashboard', path: '/dashboard', title: 'Dashboard', requiresAuth: true },
   { view: 'my-listings', path: '/my-listings', title: 'My Listings', requiresAuth: true },
   { view: 'saved', path: '/saved', title: 'Saved', requiresAuth: true },
