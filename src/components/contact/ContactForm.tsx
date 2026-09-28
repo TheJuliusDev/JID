@@ -1,7 +1,19 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { AlertCircle, ArrowRight, Loader2, Mail, MessageSquare, RotateCcw, Send, User } from 'lucide-react';
-import { sendContactMessage, isContactFormConfigured } from '../../services/contact';
+import {
+  AlertCircle,
+  ArrowRight,
+  Eye,
+  Inbox,
+  Loader2,
+  Mail,
+  MessageSquare,
+  Reply,
+  RotateCcw,
+  Send,
+  User,
+} from 'lucide-react';
+import { sendContactMessage, isContactFormConfigured, ContactResult } from '../../services/contact';
 
 type Status = 'idle' | 'submitting' | 'success' | 'error';
 type FieldName = 'name' | 'email' | 'subject' | 'message';
@@ -30,6 +42,28 @@ const SUBJECT_OPTIONS = [
 const CUSTOM_SUBJECT = '__custom__';
 const EASE = [0.21, 1, 0.36, 1] as const;
 
+/** Friendly, reason-specific copy for every failure the service can report. */
+const ERROR_COPY = {
+  'not-configured': {
+    title: 'This form isn’t ready to send yet.',
+    body: 'We’re finishing the wiring behind the scenes. Please try again shortly — nothing you typed has been lost.',
+  },
+  invalid: {
+    title: 'That message didn’t get through.',
+    body: 'The messaging service flagged the submission as invalid. Please review your message and try again.',
+  },
+  network: {
+    title: 'We couldn’t reach the messaging service.',
+    body: 'Check your internet connection, then hit “Try again” — everything you typed is still here.',
+  },
+} as const;
+
+const SUCCESS_STEPS = [
+  { icon: Inbox, label: 'Received', sub: 'In our inbox' },
+  { icon: Eye, label: 'Read', sub: 'By a real person' },
+  { icon: Reply, label: 'Reply', sub: 'Within 1 working day' },
+] as const;
+
 const validate = (values: Values): Errors => {
   const errors: Errors = {};
   if (!values.name.trim()) errors.name = 'Please tell us your name.';
@@ -49,6 +83,11 @@ export const ContactForm: React.FC = () => {
   const [isCustomSubject, setIsCustomSubject] = useState(false);
   // Honeypot: real visitors never fill this, so it is our cheapest spam filter.
   const [website, setWebsite] = useState('');
+  // Why the last attempt failed (so the error card can explain itself precisely).
+  const [errorReason, setErrorReason] = useState<Exclude<ContactResult, { ok: true }>['reason'] | null>(null);
+  // Snapshot of the submitted subject, kept so the success card can recap it
+  // after the form fields are cleared.
+  const [lastSubject, setLastSubject] = useState('');
   const reduceMotion = useReducedMotion();
 
   // The endpoint comes from the environment. If it is missing we say so plainly
@@ -68,7 +107,10 @@ export const ContactForm: React.FC = () => {
       // Re-validate live only once a field has been blurred, so nobody is
       // shouted at while still typing their first character.
       if (touched[field]) setErrors(validate(next));
-      if (status === 'error') setStatus('idle');
+      if (status === 'error') {
+        setStatus('idle');
+        setErrorReason(null);
+      }
     },
     [values, touched, status]
   );
@@ -83,8 +125,14 @@ export const ContactForm: React.FC = () => {
 
   const submit = useCallback(async () => {
     if (isSubmitting) return;
-    if (!isConfigured) return;
     if (website) return; // silently drop bots
+
+    // Even without config, clicking must never be a dead button: explain why.
+    if (!isConfigured) {
+      setErrorReason('not-configured');
+      setStatus('error');
+      return;
+    }
 
     const nextErrors = validate(values);
     setTouched({ name: true, email: true, subject: true, message: true });
@@ -92,9 +140,11 @@ export const ContactForm: React.FC = () => {
     if (Object.keys(nextErrors).length > 0) return;
 
     setStatus('submitting');
+    setErrorReason(null);
     const result = await sendContactMessage(values);
 
     if (result.ok) {
+      setLastSubject(values.subject.trim());
       setStatus('success');
       setValues(EMPTY_VALUES);
       setErrors({});
@@ -102,6 +152,7 @@ export const ContactForm: React.FC = () => {
       setIsCustomSubject(false);
     } else {
       // Everything the visitor typed is deliberately kept so retrying is lossless.
+      setErrorReason(result.reason);
       setStatus('error');
     }
   }, [isSubmitting, isConfigured, values, website]);
@@ -112,6 +163,7 @@ export const ContactForm: React.FC = () => {
     setErrors({});
     setTouched({});
     setIsCustomSubject(false);
+    setErrorReason(null);
   };
 
   const fieldClass = (field: FieldName) =>
@@ -124,6 +176,7 @@ export const ContactForm: React.FC = () => {
         ? 'border-rose-400 dark:border-rose-500/60 focus:border-rose-500 focus:ring-rose-500/15'
         : 'border-zinc-200 dark:border-zinc-800 focus:border-emerald-500 focus:ring-emerald-500/15',
       isSubmitting ? 'opacity-60' : '',
+      'disabled:cursor-not-allowed',
     ].join(' ');
 
   const labelClass =
@@ -155,33 +208,67 @@ export const ContactForm: React.FC = () => {
               exit={{ opacity: 0, y: reduceMotion ? 0 : -10, scale: reduceMotion ? 1 : 0.99 }}
               transition={transition}
               className="px-6 sm:px-10 py-14 sm:py-16 text-center"
+              role="status"
+              aria-live="polite"
             >
-              <motion.div
-                initial={reduceMotion ? undefined : { scale: 0.6, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={reduceMotion ? { duration: 0.12 } : { duration: 0.5, ease: EASE, delay: 0.05 }}
-                className="w-16 h-16 rounded-2xl bg-emerald-600 text-white mx-auto flex items-center justify-center shadow-lg shadow-emerald-600/30"
-              >
-                <svg viewBox="0 0 24 24" className="w-8 h-8" fill="none" aria-hidden="true">
-                  <motion.path
-                    d="M4.5 12.5 9.5 17.5 19.5 6.5"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    initial={reduceMotion ? undefined : { pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={reduceMotion ? { duration: 0.12 } : { duration: 0.45, ease: EASE, delay: 0.18 }}
-                  />
-                </svg>
-              </motion.div>
+              <div className="relative w-16 h-16 mx-auto">
+                <div className="absolute inset-0 rounded-2xl bg-emerald-500/20 blur-xl scale-125" aria-hidden="true" />
+                <motion.div
+                  initial={reduceMotion ? undefined : { scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={reduceMotion ? { duration: 0.12 } : { duration: 0.5, ease: EASE, delay: 0.05 }}
+                  className="relative w-16 h-16 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-lg shadow-emerald-600/30"
+                >
+                  <svg viewBox="0 0 24 24" className="w-8 h-8" fill="none" aria-hidden="true">
+                    <motion.path
+                      d="M4.5 12.5 9.5 17.5 19.5 6.5"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      initial={reduceMotion ? undefined : { pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={reduceMotion ? { duration: 0.12 } : { duration: 0.45, ease: EASE, delay: 0.18 }}
+                    />
+                  </svg>
+                </motion.div>
+              </div>
 
               <h2 className="font-display text-2xl sm:text-3xl font-black text-zinc-950 dark:text-white mt-6 mb-2">
                 Message sent successfully.
               </h2>
               <p className="text-sm text-zinc-600 dark:text-zinc-300 max-w-sm mx-auto leading-relaxed">
-                We’ll get back to you as soon as possible. Most messages are answered within one working day.
+                Your message is in our inbox.
               </p>
+              {lastSubject.trim() && (
+                <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
+                  Topic:{' '}
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">“{lastSubject}”</span>
+                </p>
+              )}
+
+              <div className="mt-8 grid grid-cols-3 gap-3 max-w-md mx-auto">
+                {SUCCESS_STEPS.map((step, index) => {
+                  const Icon = step.icon;
+                  return (
+                    <motion.div
+                      key={step.label}
+                      initial={reduceMotion ? undefined : { opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={
+                        reduceMotion
+                          ? { duration: 0.12 }
+                          : { duration: 0.4, ease: EASE, delay: 0.28 + index * 0.08 }
+                      }
+                      className="px-3 py-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-100 dark:border-zinc-800"
+                    >
+                      <Icon className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mx-auto" />
+                      <p className="mt-2 text-[11px] font-bold text-zinc-900 dark:text-zinc-100">{step.label}</p>
+                      <p className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-tight">{step.sub}</p>
+                    </motion.div>
+                  );
+                })}
+              </div>
 
               <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                 <button
@@ -209,6 +296,7 @@ export const ContactForm: React.FC = () => {
                   void submit();
                 }}
                 noValidate
+                aria-busy={isSubmitting}
                 className="px-6 sm:px-10 py-8 sm:py-10 space-y-5"
               >
                 <div className="flex items-center gap-2 pb-5 border-b border-zinc-100 dark:border-zinc-800">
@@ -244,6 +332,7 @@ export const ContactForm: React.FC = () => {
                         type="text"
                         autoComplete="name"
                         maxLength={MAX.name}
+                        disabled={isSubmitting}
                         value={values.name}
                         onChange={(e) => setField('name', e.target.value)}
                         onBlur={() => blurField('name')}
@@ -274,6 +363,7 @@ export const ContactForm: React.FC = () => {
                         inputMode="email"
                         autoComplete="email"
                         maxLength={MAX.email}
+                        disabled={isSubmitting}
                         value={values.email}
                         onChange={(e) => setField('email', e.target.value)}
                         onBlur={() => blurField('email')}
@@ -299,6 +389,7 @@ export const ContactForm: React.FC = () => {
                   <select
                     id="contact-subject"
                     name="subject"
+                    disabled={isSubmitting}
                     value={subjectSelectValue}
                     onChange={(e) => {
                       if (e.target.value === CUSTOM_SUBJECT) {
@@ -331,6 +422,7 @@ export const ContactForm: React.FC = () => {
                       type="text"
                       aria-label="Your subject"
                       maxLength={MAX.subject}
+                      disabled={isSubmitting}
                       value={values.subject}
                       onChange={(e) => setField('subject', e.target.value)}
                       onBlur={() => blurField('subject')}
@@ -361,6 +453,7 @@ export const ContactForm: React.FC = () => {
                     name="message"
                     rows={5}
                     maxLength={MAX.message}
+                    disabled={isSubmitting}
                     value={values.message}
                     onChange={(e) => setField('message', e.target.value)}
                     onBlur={() => blurField('message')}
@@ -394,9 +487,11 @@ export const ContactForm: React.FC = () => {
                             <AlertCircle className="w-4 h-4" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-bold text-rose-900 dark:text-rose-200">Something went wrong.</p>
+                            <p className="text-sm font-bold text-rose-900 dark:text-rose-200">
+                              {ERROR_COPY[errorReason ?? 'network'].title}
+                            </p>
                             <p className="text-xs text-rose-700 dark:text-rose-300/90 mt-1 leading-relaxed">
-                              Your message wasn’t sent. Please try again — everything you typed has been kept.
+                              {ERROR_COPY[errorReason ?? 'network'].body}
                             </p>
                             <button
                               type="button"
@@ -413,7 +508,44 @@ export const ContactForm: React.FC = () => {
                   )}
                 </AnimatePresence>
 
-                {!isConfigured && (
+                {/* Sending state — unmistakable loading while the request is in flight */}
+                <AnimatePresence initial={false}>
+                  {isSubmitting && (
+                    <motion.div
+                      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -6 }}
+                      animate={reduceMotion ? { opacity: 1 } : { opacity: 1, height: 'auto', y: 0 }}
+                      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -6 }}
+                      transition={transition}
+                      className="overflow-hidden"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <div className="rounded-2xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/30 p-4 sm:p-5">
+                        <div className="flex items-center gap-3">
+                          <Loader2 className="w-4 h-4 text-emerald-600 animate-spin shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-emerald-900 dark:text-emerald-200">
+                              Sending your message…
+                            </p>
+                            <p className="text-xs text-emerald-700 dark:text-emerald-300/80 mt-0.5">
+                              This usually takes a few seconds.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-3 h-1.5 bg-emerald-100 dark:bg-emerald-900/50 rounded-full overflow-hidden" aria-hidden="true">
+                          <motion.div
+                            className="h-full bg-emerald-500"
+                            initial={{ x: '-100%' }}
+                            animate={{ x: '100%' }}
+                            transition={{ duration: 0.9, ease: 'easeInOut', repeat: Infinity, repeatDelay: 0.5 }}
+                          />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {!isConfigured && status !== 'error' && (
                   <div className="p-4 rounded-2xl border border-amber-200 dark:border-amber-900/70 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 text-xs leading-relaxed">
                     Direct messaging is temporarily unavailable while we finish wiring this form up. Please try again
                     shortly.
@@ -422,7 +554,7 @@ export const ContactForm: React.FC = () => {
 
                 <button
                   type="submit"
-                  disabled={isSubmitting || !isConfigured}
+                  disabled={isSubmitting}
                   aria-busy={isSubmitting}
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-2xl shadow-lg shadow-emerald-600/25 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-600 cursor-pointer"
                 >
