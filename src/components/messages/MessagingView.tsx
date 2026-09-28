@@ -8,9 +8,11 @@ import {
   fetchMessages,
   fetchMessagesBefore,
   sendMessage,
+  deleteMessage,
   markThreadRead,
   subscribeToMessages,
   isPhotoMessage,
+  isDeletedMessage,
   photoMessageUrl,
   photoMessageContent,
   messageSummary,
@@ -31,6 +33,7 @@ import {
   AlertTriangle,
   X,
   ZoomIn,
+  Trash2,
 } from 'lucide-react';
 
 interface MessagingViewProps {
@@ -181,10 +184,8 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onB
         }
       },
       (updated) => {
-        // Read receipts: reflect when the other student saw our own messages.
-        if (updated.senderId === user.id) {
-          setMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
-        }
+        // Merges both read-receipt stamps and soft-deletes, from either side.
+        setMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
       }
     );
 
@@ -263,6 +264,16 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onB
       setMessageText(text); // restore so the student can retry
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!window.confirm('Delete this message for everyone? This cannot be undone.')) return;
+    try {
+      const updated = await deleteMessage(messageId);
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)));
+    } catch (err) {
+      console.error('[messages] delete failed', err);
     }
   };
 
@@ -550,16 +561,30 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onB
                 ) : (
                   messages.map((m) => {
                     const mine = m.senderId === user.id;
-                    const photo = isPhotoMessage(m.content);
+                    const deleted = isDeletedMessage(m.content);
+                    const photo = !deleted && isPhotoMessage(m.content);
                     return (
-                      <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                      <div key={m.id} className={`flex items-end gap-1 ${mine ? 'justify-end' : 'justify-start'} group/bubble`}>
+                        {mine && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMessage(m.id)}
+                            aria-label="Delete message"
+                            title="Delete message"
+                            className="p-1.5 mb-1.5 rounded-lg text-zinc-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 opacity-0 group-hover/bubble:opacity-100 focus-visible:opacity-100 transition-opacity cursor-pointer flex-shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <div
                           className={`max-w-[80%] sm:max-w-[70%] rounded-2xl ${
                             photo ? 'p-1' : 'px-4 py-2.5'
                           } text-sm leading-relaxed ${
                             mine
                               ? 'bg-emerald-600 text-white rounded-br-md'
-                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-bl-md'
+                              : deleted
+                                ? 'bg-zinc-100/70 dark:bg-zinc-800/50 text-zinc-400 dark:text-zinc-500 rounded-bl-md'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-bl-md'
                           }`}
                         >
                           {photo ? (
@@ -579,6 +604,8 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ onOpenProfile, onB
                                 <ZoomIn className="w-6 h-6 text-white" />
                               </span>
                             </button>
+                          ) : deleted ? (
+                            <p className="italic text-[13px] whitespace-pre-wrap break-words">Message deleted</p>
                           ) : (
                             <p className="whitespace-pre-wrap break-words">{m.content}</p>
                           )}

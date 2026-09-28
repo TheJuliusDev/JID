@@ -16,8 +16,8 @@ export interface LegalSection {
   body?: React.ReactNode;
   /** Bulleted list rendered under the copy. */
   bullets?: React.ReactNode[];
-  /** Numbered sub-clauses rendered after the bullets. */
-  blocks?: React.ReactNode[];
+  /** Boxed annexes rendered after the bullets — tables, sub-clauses, notices. */
+  blocks?: Array<{ label?: string; content: React.ReactNode }>;
 }
 
 export interface LegalDocumentProps {
@@ -33,7 +33,7 @@ export interface LegalDocumentProps {
 }
 
 /** Sticky offset that clears the fixed site navbar when jumping to an anchor. */
-const SCROLL_MARGIN_CLASS = 'scroll-mt-28 sm:scroll-mt-32';
+const SCROLL_MARGIN_CLASS = 'scroll-mt-28';
 
 const formatDate = (iso: string): string => {
   const parsed = new Date(`${iso}T00:00:00`);
@@ -107,7 +107,7 @@ export const LegalDocument: React.FC<LegalDocumentProps> = ({
         description={description}
         highlights={highlights}
         aside={
-          <div className="lg:justify-self-end">
+          <div className="flex justify-start lg:justify-end">
             <div className="inline-flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm">
               <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <div className="text-left">
@@ -193,7 +193,7 @@ export const LegalDocument: React.FC<LegalDocumentProps> = ({
                         ? { duration: 0.12 }
                         : { duration: 0.5, ease: [0.21, 1, 0.36, 1], delay: 0.05 }
                     }
-                    className={`${SCROLL_MARGIN_CLASS} scroll-mt-28`}
+                    className={SCROLL_MARGIN_CLASS}
                   >
                     <div className="flex items-start gap-4">
                       <span className="hidden sm:flex w-9 h-9 rounded-xl bg-zinc-950 dark:bg-zinc-800 text-white items-center justify-center shrink-0 font-mono-code text-xs font-bold">
@@ -225,21 +225,23 @@ export const LegalDocument: React.FC<LegalDocumentProps> = ({
                         )}
 
                         {section.blocks && section.blocks.length > 0 && (
-                          <ol className="mt-5 space-y-4">
+                          <div className="mt-5 space-y-4">
                             {section.blocks.map((block, blockIndex) => (
-                              <li
+                              <div
                                 key={blockIndex}
                                 className="p-4 sm:p-5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl"
                               >
-                                <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1.5">
-                                  {String.fromCharCode(97 + blockIndex)}. {section.heading}
-                                </div>
+                                {block.label && (
+                                  <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-3">
+                                    {block.label}
+                                  </div>
+                                )}
                                 <div className="text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed space-y-2">
-                                  {block}
+                                  {block.content}
                                 </div>
-                              </li>
+                              </div>
                             ))}
-                          </ol>
+                          </div>
                         )}
                       </div>
                     </div>

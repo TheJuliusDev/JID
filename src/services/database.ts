@@ -130,6 +130,7 @@ function mapMessage(row: any): Message {
     content: row.content,
     createdAt: row.created_at,
     readAt: row.read_at || undefined,
+    deletedAt: row.deleted_at || undefined,
   };
 }
 
@@ -154,8 +155,16 @@ export function photoMessageContent(url: string): string {
   return `${PHOTO_MESSAGE_PREFIX}${url}`;
 }
 
+// A soft-deleted message stores this marker instead of its original content.
+export const DELETED_MESSAGE_MARKER = 'jid://deleted/';
+
+export function isDeletedMessage(content: string): boolean {
+  return content.startsWith(DELETED_MESSAGE_MARKER);
+}
+
 /** Human-friendly preview of a message body (photos are never shown as URLs). */
 export function messageSummary(content: string): string {
+  if (isDeletedMessage(content)) return 'Message deleted';
   return isPhotoMessage(content) ? 'Sent a photo' : content;
 }
 
@@ -678,6 +687,20 @@ export async function sendMessage(conversationId: string, senderId: string, cont
   const { data, error } = await sb
     .from('messages')
     .insert({ conversation_id: conversationId, sender_id: senderId, content })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapMessage(data);
+}
+
+/** Soft-delete a message the caller sent: content is wiped and deleted_at is
+ * stamped, so both sides render it as "deleted" instead of removing the row. */
+export async function deleteMessage(messageId: string): Promise<Message> {
+  const sb = requireSupabase();
+  const { data, error } = await sb
+    .from('messages')
+    .update({ content: DELETED_MESSAGE_MARKER, deleted_at: new Date().toISOString() })
+    .eq('id', messageId)
     .select('*')
     .single();
   if (error) throw error;

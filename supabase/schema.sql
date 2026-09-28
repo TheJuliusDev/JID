@@ -214,6 +214,11 @@ create table if not exists public.messages (
 alter table public.messages
   add column if not exists read_at timestamptz;
 
+-- Soft-deletes: a sender wipes the content and stamps deleted_at (the row
+-- stays so ordering, read receipts and realtime updates keep working).
+alter table public.messages
+  add column if not exists deleted_at timestamptz;
+
 -- Read receipts: find unread messages sent to a student quickly.
 create index if not exists messages_read_pending_idx
   on public.messages (conversation_id)
@@ -915,6 +920,13 @@ create policy messages_update_read_at on public.messages
     public.is_conversation_participant(conversation_id, auth.uid())
     and sender_id <> auth.uid()
   );
+
+-- A student may soft-delete (wipe + stamp deleted_at) only the messages they
+-- sent. The read_at policy above keeps read receipts stamping separate.
+drop policy if exists messages_update_own on public.messages;
+create policy messages_update_own on public.messages
+  for update using (auth.uid() = sender_id)
+  with check (auth.uid() = sender_id);
 
 -- ---- notifications ----
 drop policy if exists notif_select on public.notifications;

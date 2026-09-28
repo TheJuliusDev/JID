@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider, useData } from './context/DataContext';
+import { CookieConsentProvider } from './context/CookieConsentContext';
+import { CookieConsentBanner } from './components/cookie/CookieConsentBanner';
 import { MarketplaceItem, PropertyListing } from './types';
 import { configStatus } from './config/env';
 import { RouterProvider, useRouter } from './router/RouterProvider';
@@ -24,6 +26,9 @@ import { AccommodationPage } from './pages/AccommodationPage';
 import { VendorsPage } from './pages/VendorsPage';
 import { AboutPage } from './pages/AboutPage';
 import { ContactPage } from './pages/ContactPage';
+import { TermsPage } from './pages/TermsPage';
+import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
+import { CookiePolicyPage } from './pages/CookiePolicyPage';
 import { AuthPage } from './pages/AuthPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
@@ -247,6 +252,15 @@ function AppContent() {
 
       case 'contact':
         return <ContactPage />;
+
+      case 'terms':
+        return <TermsPage />;
+
+      case 'privacy':
+        return <PrivacyPolicyPage />;
+
+      case 'cookies':
+        return <CookiePolicyPage />;
 
       case 'login':
         return <AuthPage mode="login" redirectTo="home" />;
@@ -486,6 +500,8 @@ function RoutedApp() {
   return (
     <RouterProvider>
       <AppContent />
+      {/* Rendered inside the router so its legal NavLinks can navigate. */}
+      <CookieConsentBanner />
     </RouterProvider>
   );
 }
@@ -498,7 +514,9 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <DataProvider>
-          <RoutedApp />
+          <CookieConsentProvider>
+            <RoutedApp />
+          </CookieConsentProvider>
         </DataProvider>
       </AuthProvider>
     </ThemeProvider>

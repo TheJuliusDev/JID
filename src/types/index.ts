@@ -144,6 +144,8 @@ export interface Message {
   createdAt: string;
   /** Set once the recipient has opened/read this message (read receipt). */
   readAt?: string;
+  /** Set when the sender soft-deletes the message (content is wiped). */
+  deletedAt?: string;
 }
 
 export interface Conversation {
