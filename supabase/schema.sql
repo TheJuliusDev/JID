@@ -459,6 +459,10 @@ end;
 $$;
 
 -- 4.7 Apply a boost: stamp boosted_until on the target listing
+-- The jid.trusted_write flag marks this SECURITY DEFINER writer as legitimate
+-- for protect_listing_privileged_columns() below. auth.uid() still returns the
+-- calling user inside a definer function, so an is_admin() check alone would
+-- wrongly block a legitimate boost. Transaction-local, so clients cannot forge it.
 create or replace function public.apply_boost()
 returns trigger
 language plpgsql
@@ -466,6 +470,8 @@ security definer
 set search_path = public
 as $$
 begin
+  perform set_config('jid.trusted_write', 'on', true);
+
   if new.status = 'active' then
     if new.listing_type = 'marketplace' then
       update public.marketplace_listings
@@ -489,6 +495,8 @@ security definer
 set search_path = public
 as $$
 begin
+  perform set_config('jid.trusted_write', 'on', true);
+
   update public.listing_boosts
     set status = 'expired'
     where status = 'active' and expires_at <= now();
@@ -595,6 +603,11 @@ security definer
 set search_path = public
 as $$
 begin
+  -- Views are incremented on read paths, including for anonymous visitors, so
+  -- this cannot require is_admin(). Flag it as a trusted writer instead, or
+  -- protect_listing_privileged_columns() would reject every legitimate view.
+  perform set_config('jid.trusted_write', 'on', true);
+
   if kind = 'marketplace' then
     update public.marketplace_listings set views_count = views_count + 1 where id = lid;
   else
@@ -743,6 +756,95 @@ $$;
 drop trigger if exists trg_protect_suspension on public.profiles;
 create trigger trg_protect_suspension before update on public.profiles
   for each row execute function public.protect_suspension();
+
+-- RLS is row-level only: it cannot restrict WHICH COLUMNS a listing owner may
+-- update, so without this guard any logged-in user can PATCH their own row and
+-- set is_verified, or flip status back to 'active' and undo an admin takedown.
+-- Fields are read via to_jsonb() rather than new.<col>: record field resolution
+-- is runtime, so new.is_verified would error on marketplace_listings, which has
+-- no such column. A missing key yields NULL, and NULL IS DISTINCT FROM NULL is
+-- false, so absent columns are skipped.
+create or replace function public.protect_listing_privileged_columns()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  is_admin_user boolean := public.is_admin(auth.uid());
+  is_trusted    boolean := coalesce(current_setting('jid.trusted_write', true), 'off') = 'on';
+  new_status     text    := new.status::text;
+  old_status     text    := old.status::text;
+  -- status values a non-admin owner is allowed to set
+  owner_statuses text[]  := case
+                             when tg_table_name = 'property_listings'
+                               then array['active', 'paused', 'rented']
+                             else array['active', 'paused', 'sold']
+                           end;
+begin
+  if is_admin_user or is_trusted then
+    return new;
+  end if;
+
+  -- Verified badge: moderation-controlled only (property_listings).
+  if (to_jsonb(new) ->> 'is_verified')::boolean
+     is distinct from (to_jsonb(old) ->> 'is_verified')::boolean then
+    raise exception 'Only administrators can change is_verified'
+      using errcode = '42501';
+  end if;
+
+  -- Search ranking / social proof metrics.
+  if (to_jsonb(new) ->> 'views_count')::integer
+     is distinct from (to_jsonb(old) ->> 'views_count')::integer then
+    raise exception 'views_count is server-managed and cannot be edited'
+      using errcode = '42501';
+  end if;
+
+  if (to_jsonb(new) ->> 'saves_count')::integer
+     is distinct from (to_jsonb(old) ->> 'saves_count')::integer then
+    raise exception 'saves_count is server-managed and cannot be edited'
+      using errcode = '42501';
+  end if;
+
+  -- Reward/promotion visibility window.
+  if (to_jsonb(new) ->> 'boosted_until')::timestamptz
+     is distinct from (to_jsonb(old) ->> 'boosted_until')::timestamptz then
+    raise exception 'boosted_until is set by the boost system and cannot be edited'
+      using errcode = '42501';
+  end if;
+
+  -- Moderation state. An owner may relist (active <-> paused <-> sold/rented)
+  -- but may never enter 'removed', nor lift a row an admin has removed.
+  if new_status is distinct from old_status then
+    if new_status = 'removed' then
+      raise exception 'Only administrators can remove a listing'
+        using errcode = '42501';
+    end if;
+
+    if old_status = 'removed' then
+      raise exception 'This listing was removed by a moderator and cannot be restored'
+        using errcode = '42501';
+    end if;
+
+    if not (new_status = any (owner_statuses)) then
+      raise exception 'Invalid status for a listing owner'
+        using errcode = '42501';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_protect_listing_columns on public.marketplace_listings;
+create trigger trg_protect_listing_columns
+  before update on public.marketplace_listings
+  for each row execute function public.protect_listing_privileged_columns();
+
+drop trigger if exists trg_protect_listing_columns on public.property_listings;
+create trigger trg_protect_listing_columns
+  before update on public.property_listings
+  for each row execute function public.protect_listing_privileged_columns();
 
 -- Create profile on new auth user
 drop trigger if exists on_auth_user_created on auth.users;
@@ -1016,6 +1118,28 @@ create policy audit_admin_only on public.admin_audit_log
 -- ----------------------------------------------------------------------------
 grant usage on schema public to anon, authenticated;
 grant select on public.public_profiles to anon, authenticated;
+
+-- Column-level UPDATE on listings. The trigger above is the control that works;
+-- this layer means a protected column cannot even be named in a request. Only
+-- the columns the app actually sends are granted (see updateMarketplace /
+-- updateProperty in src/services/database.ts).
+-- SECURITY DEFINER writers are unaffected: apply_boost / expire_boosts run as
+-- the table owner, and owner privileges are implicit.
+-- `status` is deliberately still granted, because the admin console sets
+-- status='removed' from the browser as an authenticated user (database.ts:970);
+-- revoking it would break moderation. The trigger enforces its value instead.
+revoke update on public.marketplace_listings from anon, authenticated;
+grant update (
+  title, description, category, price, condition, location, pickup_spot,
+  specs, images, contact_preference, phone_or_whatsapp, status
+) on public.marketplace_listings to authenticated;
+
+revoke update on public.property_listings from anon, authenticated;
+grant update (
+  title, description, area, distance_to_campus, price_per_year, room_type,
+  availability, water_source, power_setup, security, proximity_desc,
+  amenities, images, contact_phone, contact_whatsapp, landlord_role, status
+) on public.property_listings to authenticated;
 
 -- ----------------------------------------------------------------------------
 -- 9. Realtime

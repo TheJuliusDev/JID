@@ -44,13 +44,37 @@ export const ROUTES: RouteDef[] = [
   { view: 'messages', path: '/messages', title: 'Messages', requiresAuth: true },
   { view: 'profile', path: '/profile', title: 'My Profile', requiresAuth: true },
   { view: 'public-profile', path: '/u/:username', title: 'Profile' },
-  { view: 'admin', path: '/admin', title: 'Admin' },
 ];
+
+// Admin console.
+//
+// These are deliberately absent from `ROUTES` navigation flags: the console is
+// never advertised in the navbar or footer, because only the database knows who
+// may reach it. It is still reachable by URL — the route exists so the screens
+// have real, back-button-friendly addresses, while `AdminGate` re-verifies the
+// caller's role against `admin_session` on every entry.
+//
+// `requiresAuth` is intentionally unset: an admin who is signed out must be
+// offered the admin sign-in form, not bounced to the public homepage.
+export const ADMIN_ROUTES: RouteDef[] = [
+  { view: 'admin', path: '/admin', title: 'Admin Overview' },
+  { view: 'admin-users', path: '/admin/users', title: 'Admin · Users' },
+  { view: 'admin-listings', path: '/admin/listings', title: 'Admin · Listings' },
+  { view: 'admin-reports', path: '/admin/reports', title: 'Admin · Reports' },
+  { view: 'admin-vendors', path: '/admin/vendors', title: 'Admin · Vendors' },
+  { view: 'admin-reviews', path: '/admin/reviews', title: 'Admin · Reviews' },
+  { view: 'admin-audit', path: '/admin/audit', title: 'Admin · Audit log' },
+];
+
+export const ALL_ROUTES: RouteDef[] = [...ROUTES, ...ADMIN_ROUTES];
+
+export const isAdminView = (view: ViewType): boolean =>
+  ADMIN_ROUTES.some((route) => route.view === view);
 
 /** Primary navigation order shown in the navbar and footer. */
 export const MAIN_NAV_VIEWS: ViewType[] = ROUTES.filter((r) => r.inMainNav).map((r) => r.view);
 
-const BY_VIEW = new Map<ViewType, RouteDef>(ROUTES.map((r) => [r.view, r]));
+const BY_VIEW = new Map<ViewType, RouteDef>(ALL_ROUTES.map((r) => [r.view, r]));
 
 export const getRoute = (view: ViewType): RouteDef | undefined => BY_VIEW.get(view);
 
@@ -77,12 +101,12 @@ export interface RouteMatch {
 export const matchPath = (pathname: string): RouteMatch => {
   const path = normalize(pathname);
 
-  for (const route of ROUTES) {
+  for (const route of ALL_ROUTES) {
     if (route.path === path) return { view: route.view, params: {}, path };
   }
 
   // Parameterised route: /u/:username
-  for (const route of ROUTES) {
+  for (const route of ALL_ROUTES) {
     if (!route.path.includes(':')) continue;
     const routeParts = route.path.split('/').filter(Boolean);
     const pathParts = path.split('/').filter(Boolean);

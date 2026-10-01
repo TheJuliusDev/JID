@@ -1,0 +1,23 @@
+# JIDapp — https://jidapp.ng
+# Student marketplace and accommodation for Obafemi Awolowo University, Ile-Ife.
+
+User-agent: *
+Allow: /
+
+# Account and moderation surfaces: no value in the index, and several of these
+# are client-rendered behind an auth check.
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /messages
+Disallow: /my-listings
+Disallow: /saved
+Disallow: /profile
+Disallow: /login
+Disallow: /signup
+
+# Crawl the stylesheet and image assets so link previews can render.
+Allow: /assets/
+Allow: /og-image.png
+Allow: /og-image.svg
+
+Sitemap: https://jidapp.ng/sitemap.xml

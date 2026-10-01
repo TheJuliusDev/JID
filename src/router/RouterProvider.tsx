@@ -1,12 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ViewType } from '../types';
-import { BRAND_CONFIG } from '../config/brand';
 import {
   NavigateOptions,
   getRoute,
   matchPath,
   pathForView,
 } from './routes';
+import { applyRouteMeta } from './seo';
 
 interface RouterValue {
   /** The view the app should render. */
@@ -40,17 +40,14 @@ export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  // Keep the document title in step with the page (and restore it on unload).
+  // Keep the document metadata in step with the page. This is what gives each
+  // client-rendered route its own title, description and canonical URL.
+  // Uses the resolved path rather than the route's pattern, so `/u/johndoe`
+  // produces a real canonical URL instead of a literal `/u/:username`.
   useEffect(() => {
     const route = getRoute(match.view);
-    const previous = document.title;
-    if (route && match.view !== 'not-found') {
-      document.title = `${route.title} | ${BRAND_CONFIG.name}`;
-    }
-    return () => {
-      document.title = previous;
-    };
-  }, [match.view]);
+    applyRouteMeta(match.view, match.path, route?.title);
+  }, [match.view, match.path]);
 
   const navigate = useCallback<RouterValue['navigate']>((view, options = {}) => {
     const nextPath = pathForView(view, options);

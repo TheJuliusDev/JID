@@ -1,551 +1,237 @@
-import React, { useState, useEffect, useCallback } from 'react';
+/**
+ * The security boundary for the JID admin console.
+ *
+ * Everything below this component assumes `phase === 'authorized'`, and that
+ * verdict never comes from the browser: it is the response of the
+ * `admin_session` RPC, which reads the admin role from the database for the
+ * caller's own JWT. Hiding the nav link, checking `profiles.is_admin`, or any
+ * client-side flag is UX only — this is the check that counts, and every RPC
+ * behind it repeats the same verification server-side.
+ *
+ * Phases:
+ *   checking      — resolving the session / asking the database who you are
+ *   signed-out    — show the admin sign-in form
+ *   denied        — authenticated, but not an administrator (logged server-side)
+ *   not-deployed  — the admin SQL migration has not been applied yet
+ *   authorized    — render the console
+ */
+
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertTriangle, LogOut, ShieldAlert, Terminal } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import {
-  fetchMyRole,
-  adminListUsers,
-  adminSetSuspended,
-  adminListReports,
-  adminResolveListingReport,
-  adminResolveUserReport,
-  adminRemoveListing,
-  adminLog,
-  adminStats,
-} from '../../services/database';
-import { ReportItem, UserProfile } from '../../types';
-import {
-  Shield,
-  ShieldAlert,
-  LogOut,
-  Users as UsersIcon,
-  Flag,
-  LayoutDashboard,
-  Loader2,
-  Ban,
-  CheckCircle2,
-  Trash2,
-  Lock,
-  AlertTriangle,
-  ShoppingBag,
-  Home,
-  UserCheck,
-  RefreshCw,
-} from 'lucide-react';
+import { supabase } from '../../services/supabase';
+import { AdminApiError, getAdminSession, logAccessDenied } from '../../services/adminApi';
+import type { AdminSession } from '../../services/adminApi';
+import { BRAND_CONFIG } from '../../config/brand';
+import { AdminLogin } from './AdminLogin';
+import { AdminShell } from './AdminShell';
 
 interface AdminGateProps {
   onExit: () => void;
 }
 
-type AdminUser = UserProfile & { isSuspended: boolean; role: string };
-type Stats = { users: number; marketplace: number; properties: number; reports: number };
-type GateState = 'checking' | 'unauthenticated' | 'denied' | 'authorized';
-type AdminTab = 'overview' | 'users' | 'reports';
+type GatePhase = 'checking' | 'signed-out' | 'denied' | 'not-deployed' | 'authorized';
 
 export const AdminGate: React.FC<AdminGateProps> = ({ onExit }) => {
-  const { user, isAuthenticated, isLoading, login, logout } = useAuth();
-  const [gate, setGate] = useState<GateState>('checking');
+  const { user, isLoading, isAuthenticated, login, logout } = useAuth();
+  const [phase, setPhase] = useState<GatePhase>('checking');
+  const [session, setSession] = useState<AdminSession | null>(null);
+  const [fatal, setFatal] = useState<string | null>(null);
+  // Guards against logging the same denied attempt repeatedly.
+  const deniedLoggedFor = useRef<string | null>(null);
 
-  // Server-side role verification (defense in depth): even though App only
-  // routes here, and RLS blocks the data itself, we independently confirm the
-  // signed-in account carries the admin role before rendering the console.
+  const verify = useCallback(async () => {
+    deniedLoggedFor.current = null;
+    setFatal(null);
+    try {
+      const result = await getAdminSession();
+      if (result.authenticated && result.is_admin) {
+        setSession(result);
+        setPhase('authorized');
+      } else if (result.authenticated) {
+        setPhase('denied');
+      } else {
+        setSession(null);
+        setPhase('signed-out');
+      }
+    } catch (err) {
+      if (err instanceof AdminApiError && err.kind === 'not-deployed') {
+        setPhase('not-deployed');
+        return;
+      }
+      setFatal(
+        err instanceof AdminApiError
+          ? err.message
+          : 'Could not verify your access. Check your connection and try again.'
+      );
+      setPhase('denied');
+    }
+  }, []);
+
+  // Verify whenever the signed-in identity changes, and once on mount.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (isLoading) {
-        setGate('checking');
-        return;
-      }
-      if (!isAuthenticated || !user) {
-        setGate('unauthenticated');
-        return;
-      }
-      try {
-        const role = await fetchMyRole(user.id);
-        if (cancelled) return;
-        setGate(role === 'admin' ? 'authorized' : 'denied');
-      } catch {
-        if (!cancelled) setGate('denied');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoading, isAuthenticated, user?.id]);
+    if (isLoading) {
+      setPhase('checking');
+      return;
+    }
+    if (!isAuthenticated || !user) {
+      setSession(null);
+      setPhase('signed-out');
+      return;
+    }
+    setPhase('checking');
+    void verify();
+  }, [isLoading, isAuthenticated, user?.id, verify]);
 
-  if (gate === 'checking') {
+  // A revoked role, expired session or sign-out must drop the console
+  // immediately rather than leaving a stale admin screen on screen.
+  useEffect(() => {
+    if (!supabase) return;
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        verify();
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, [verify]);
+
+  // Record refused entry attempts. The server stamps the caller's own id, so
+  // this can log an attempt but can never frame somebody else.
+  useEffect(() => {
+    if (phase !== 'denied' || !user?.id) return;
+    if (deniedLoggedFor.current === user.id) return;
+    deniedLoggedFor.current = user.id;
+    void logAccessDenied('console_entry');
+  }, [phase, user?.id]);
+
+  if (phase === 'checking') {
     return (
-      <Shell>
-        <div className="flex flex-col items-center gap-3 text-zinc-400">
-          <Loader2 className="w-7 h-7 animate-spin text-emerald-500" />
+      <FullScreen>
+        <div className="flex flex-col items-center gap-3 text-zinc-500 dark:text-zinc-400" role="status">
+          <span className="w-8 h-8 rounded-xl bg-emerald-600/10 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-center">
+            <ShieldAlert className="w-4 h-4 animate-pulse text-emerald-600 dark:text-emerald-400" />
+          </span>
           <p className="text-sm">Verifying access…</p>
         </div>
-      </Shell>
+      </FullScreen>
     );
   }
 
-  if (gate === 'unauthenticated') {
+  if (phase === 'signed-out') {
     return <AdminLogin onLogin={login} onExit={onExit} />;
   }
 
-  if (gate === 'denied') {
+  if (phase === 'not-deployed') {
     return (
-      <Shell>
-        <div className="max-w-md text-center space-y-5">
-          <div className="w-16 h-16 rounded-2xl bg-rose-500/10 flex items-center justify-center mx-auto text-rose-500">
-            <ShieldAlert className="w-8 h-8" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-black text-white font-display">Access denied</h1>
-            <p className="text-sm text-zinc-400 mt-2">
-              Your account does not have administrator privileges. This attempt has been logged.
-            </p>
-          </div>
-          <div className="flex items-center justify-center gap-3">
-            <button
-              onClick={onExit}
-              className="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-sm rounded-xl cursor-pointer"
-            >
-              Back to JID
-            </button>
-            <button
-              onClick={logout}
-              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm rounded-xl cursor-pointer flex items-center gap-2"
-            >
-              <LogOut className="w-4 h-4" />
-              Sign out
-            </button>
-          </div>
-        </div>
-      </Shell>
+      <FullScreen>
+        <Card
+          icon={Terminal}
+          title="Admin database functions are not installed"
+          tone="warn"
+          body={
+            <>
+              <p>
+                The console needs the RPCs and policies in{' '}
+                <code className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800">
+                  supabase/migrations/002_admin_panel.sql
+                </code>
+                . Run that file in the Supabase SQL Editor, then reload this page.
+              </p>
+              <p className="text-xs opacity-80">
+                Nothing else is missing — this is purely a database-side step, and it is safe to
+                re-run.
+              </p>
+            </>
+          }
+          actions={
+            <>
+              <button type="button" onClick={verify} className={SECONDARY_BTN}>
+                Retry
+              </button>
+              <button type="button" onClick={onExit} className={PRIMARY_BTN}>
+                Back to {BRAND_CONFIG.name}
+              </button>
+            </>
+          }
+        />
+      </FullScreen>
     );
   }
 
-  return <AdminConsole onExit={onExit} onSignOut={logout} adminId={user!.id} adminName={user!.fullName} />;
-};
-
-/* ---------------------------------------------------------------- */
-/* Dark full-screen shell — the admin console is visually separate.  */
-/* ---------------------------------------------------------------- */
-const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-6">{children}</div>
-);
-
-/* ---------------------------------------------------------------- */
-/* Login form (shown when nobody is signed in).                      */
-/* ---------------------------------------------------------------- */
-const AdminLogin: React.FC<{
-  onLogin: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  onExit: () => void;
-}> = ({ onLogin, onExit }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      const res = await onLogin(email.trim(), password);
-      if (!res.success) setError(res.error || 'Sign in failed.');
-      // On success the gate re-checks the role automatically.
-    } finally {
-      setBusy(false);
-    }
-  };
+  if (phase === 'denied') {
+    return (
+      <FullScreen>
+        <Card
+          icon={ShieldAlert}
+          title="Access denied"
+          tone="danger"
+          body={
+            <>
+              <p>
+                This account does not hold the administrator role. Access is decided by the
+                database, not by this page.
+              </p>
+              <p className="text-xs opacity-80">
+                {fatal
+                  ? fatal
+                  : 'This attempt has been recorded in the audit log. If you believe this is a mistake, ask another administrator to review your role.'}
+              </p>
+            </>
+          }
+          actions={
+            <>
+              <button type="button" onClick={() => void logout()} className={DANGER_BTN}>
+                <LogOut className="w-4 h-4" />
+                Sign out
+              </button>
+              <button type="button" onClick={onExit} className={PRIMARY_BTN}>
+                Back to {BRAND_CONFIG.name}
+              </button>
+            </>
+          }
+        />
+      </FullScreen>
+    );
+  }
 
   return (
-    <Shell>
-      <div className="w-full max-w-sm space-y-6">
-        <div className="text-center space-y-3">
-          <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 flex items-center justify-center mx-auto text-emerald-400">
-            <Lock className="w-7 h-7" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-black text-white font-display">JID Admin</h1>
-            <p className="text-sm text-zinc-400 mt-1">Restricted area. Sign in with an administrator account.</p>
-          </div>
-        </div>
-
-        <form onSubmit={submit} className="space-y-3">
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            autoComplete="email"
-            className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:ring-2 focus:ring-emerald-500/50 focus:outline-none"
-          />
-          <input
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            autoComplete="current-password"
-            className="w-full px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-sm text-white placeholder-zinc-500 focus:ring-2 focus:ring-emerald-500/50 focus:outline-none"
-          />
-          {error && (
-            <p className="text-xs text-rose-400 flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              {error}
-            </p>
-          )}
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold text-sm rounded-xl cursor-pointer flex items-center justify-center gap-2"
-          >
-            {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-            Sign in
-          </button>
-        </form>
-
-        <button
-          onClick={onExit}
-          className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
-        >
-          ← Back to JID
-        </button>
-      </div>
-    </Shell>
+    <AdminShell session={session!} onExit={onExit} onSignOut={() => void logout()} onRevoked={verify} />
   );
 };
 
-/* ---------------------------------------------------------------- */
-/* The authorized console.                                           */
-/* ---------------------------------------------------------------- */
-const AdminConsole: React.FC<{
-  onExit: () => void;
-  onSignOut: () => void;
-  adminId: string;
-  adminName: string;
-}> = ({ onExit, onSignOut, adminId, adminName }) => {
-  const [tab, setTab] = useState<AdminTab>('overview');
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [reports, setReports] = useState<ReportItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-
-  const loadAll = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [s, u, r] = await Promise.all([adminStats(), adminListUsers(), adminListReports()]);
-      setStats(s);
-      setUsers(u);
-      setReports(r);
-    } catch (err: any) {
-      console.error('[admin] load failed', err);
-      setError('Could not load admin data. Your session may have expired.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [s, u, r] = await Promise.all([adminStats(), adminListUsers(), adminListReports()]);
-        if (cancelled) return;
-        setStats(s);
-        setUsers(u);
-        setReports(r);
-      } catch (err) {
-        if (!cancelled) {
-          console.error('[admin] load failed', err);
-          setError('Could not load admin data. Your session may have expired.');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const toggleSuspend = async (u: AdminUser) => {
-    setBusyId(u.id);
-    try {
-      const next = !u.isSuspended;
-      await adminSetSuspended(u.id, next);
-      await adminLog(adminId, next ? 'suspend_user' : 'unsuspend_user', 'user', u.id);
-      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, isSuspended: next } : x)));
-    } catch (err) {
-      console.error('[admin] suspend failed', err);
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const resolveReport = async (r: ReportItem, status: 'dismissed' | 'action_taken') => {
-    setBusyId(r.id);
-    try {
-      if (r.targetType === 'user') {
-        if (status === 'action_taken') {
-          await adminSetSuspended(r.targetId, true);
-          setUsers((prev) => prev.map((x) => (x.id === r.targetId ? { ...x, isSuspended: true } : x)));
-        }
-        await adminResolveUserReport(r.id, status, adminId);
-      } else {
-        if (status === 'action_taken') {
-          await adminRemoveListing(r.targetType, r.targetId);
-        }
-        await adminResolveListingReport(r.id, status, adminId);
-      }
-      await adminLog(adminId, `report_${status}`, r.targetType, r.targetId, { reason: r.reason });
-      setReports((prev) => prev.map((x) => (x.id === r.id ? { ...x, status } : x)));
-    } catch (err) {
-      console.error('[admin] resolve report failed', err);
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const pendingReports = reports.filter((r) => r.status === 'pending' || r.status === 'reviewing');
-
-  return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      {/* Top bar */}
-      <header className="sticky top-0 z-10 bg-zinc-950/90 backdrop-blur border-b border-zinc-800">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-400">
-              <Shield className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-sm font-black text-white leading-none font-display">JID Admin</p>
-              <p className="text-[11px] text-zinc-500 mt-0.5">{adminName}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={loadAll}
-              title="Refresh"
-              className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg cursor-pointer"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              onClick={onExit}
-              className="px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-800 rounded-lg cursor-pointer"
-            >
-              Exit
-            </button>
-            <button
-              onClick={onSignOut}
-              className="px-3 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-950/40 rounded-lg cursor-pointer flex items-center gap-1.5"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              Sign out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Tabs */}
-        <nav className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-xl p-1 w-fit">
-          <TabBtn active={tab === 'overview'} onClick={() => setTab('overview')} icon={LayoutDashboard} label="Overview" />
-          <TabBtn active={tab === 'users'} onClick={() => setTab('users')} icon={UsersIcon} label={`Users (${users.length})`} />
-          <TabBtn
-            active={tab === 'reports'}
-            onClick={() => setTab('reports')}
-            icon={Flag}
-            label={`Reports${pendingReports.length ? ` (${pendingReports.length})` : ''}`}
-          />
-        </nav>
-
-        {error && (
-          <div className="flex items-center gap-2 p-3 text-sm text-rose-400 bg-rose-950/40 border border-rose-900 rounded-xl">
-            <AlertTriangle className="w-4 h-4" />
-            {error}
-          </div>
-        )}
-
-        {loading ? (
-          <div className="flex items-center justify-center py-20 text-zinc-500">
-            <Loader2 className="w-6 h-6 animate-spin" />
-          </div>
-        ) : (
-          <>
-            {tab === 'overview' && stats && (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard icon={UsersIcon} label="Total users" value={stats.users} />
-                <StatCard icon={ShoppingBag} label="Marketplace items" value={stats.marketplace} />
-                <StatCard icon={Home} label="Accommodation" value={stats.properties} />
-                <StatCard icon={Flag} label="Reports filed" value={stats.reports} accent={pendingReports.length > 0} />
-              </div>
-            )}
-
-            {tab === 'users' && (
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-                {users.length === 0 ? (
-                  <EmptyRow label="No users yet." />
-                ) : (
-                  <div className="divide-y divide-zinc-800">
-                    {users.map((u) => (
-                      <div key={u.id} className="flex items-center gap-3 p-4">
-                        <div className="w-9 h-9 rounded-full bg-emerald-500/15 flex items-center justify-center text-sm font-bold text-emerald-300 flex-shrink-0">
-                          {(u.fullName || u.username || '?').charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-bold text-white truncate">{u.fullName || u.username}</p>
-                            {u.role === 'admin' && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-500/15 text-emerald-300 rounded">
-                                ADMIN
-                              </span>
-                            )}
-                            {u.isSuspended && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-bold bg-rose-500/15 text-rose-300 rounded">
-                                SUSPENDED
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-zinc-500 truncate">
-                            @{u.username}
-                            {u.department ? ` • ${u.department}` : ''}
-                          </p>
-                        </div>
-                        {u.role !== 'admin' && (
-                          <button
-                            onClick={() => toggleSuspend(u)}
-                            disabled={busyId === u.id}
-                            className={`px-3 py-1.5 text-xs font-bold rounded-lg cursor-pointer flex items-center gap-1.5 disabled:opacity-60 ${
-                              u.isSuspended
-                                ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                                : 'bg-zinc-800 hover:bg-rose-600 text-zinc-200 hover:text-white'
-                            }`}
-                          >
-                            {busyId === u.id ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : u.isSuspended ? (
-                              <UserCheck className="w-3.5 h-3.5" />
-                            ) : (
-                              <Ban className="w-3.5 h-3.5" />
-                            )}
-                            {u.isSuspended ? 'Reinstate' : 'Suspend'}
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {tab === 'reports' && (
-              <div className="space-y-3">
-                {reports.length === 0 ? (
-                  <div className="bg-zinc-900 border border-zinc-800 rounded-2xl">
-                    <EmptyRow label="No reports filed. All clear." />
-                  </div>
-                ) : (
-                  reports.map((r) => {
-                    const resolved = r.status !== 'pending' && r.status !== 'reviewing';
-                    return (
-                      <div
-                        key={r.id}
-                        className={`bg-zinc-900 border rounded-2xl p-4 ${
-                          resolved ? 'border-zinc-800 opacity-60' : 'border-zinc-700'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-zinc-800 text-zinc-300 rounded">
-                                {r.targetType}
-                              </span>
-                              <p className="text-sm font-bold text-white truncate">{r.targetTitle}</p>
-                            </div>
-                            <p className="text-xs text-amber-400 font-semibold mt-1.5">{r.reason}</p>
-                            {r.details && <p className="text-xs text-zinc-400 mt-1 leading-relaxed">{r.details}</p>}
-                            <p className="text-[11px] text-zinc-600 mt-1.5">
-                              {new Date(r.createdAt).toLocaleString()}
-                              {resolved && ` • ${r.status.replace('_', ' ')}`}
-                            </p>
-                          </div>
-                        </div>
-
-                        {!resolved && (
-                          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-zinc-800">
-                            <button
-                              onClick={() => resolveReport(r, 'action_taken')}
-                              disabled={busyId === r.id}
-                              className="px-3 py-1.5 text-xs font-bold bg-rose-600 hover:bg-rose-500 disabled:opacity-60 text-white rounded-lg cursor-pointer flex items-center gap-1.5"
-                            >
-                              {busyId === r.id ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : r.targetType === 'user' ? (
-                                <Ban className="w-3.5 h-3.5" />
-                              ) : (
-                                <Trash2 className="w-3.5 h-3.5" />
-                              )}
-                              {r.targetType === 'user' ? 'Suspend user' : 'Remove listing'}
-                            </button>
-                            <button
-                              onClick={() => resolveReport(r, 'dismissed')}
-                              disabled={busyId === r.id}
-                              className="px-3 py-1.5 text-xs font-bold bg-zinc-800 hover:bg-zinc-700 disabled:opacity-60 text-zinc-200 rounded-lg cursor-pointer flex items-center gap-1.5"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              Dismiss
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const TabBtn: React.FC<{ active: boolean; onClick: () => void; icon: React.ElementType; label: string }> = ({
-  active,
-  onClick,
-  icon: Icon,
-  label,
-}) => (
-  <button
-    onClick={onClick}
-    className={`flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-lg cursor-pointer transition-colors ${
-      active ? 'bg-emerald-600 text-white' : 'text-zinc-400 hover:text-white'
-    }`}
-  >
-    <Icon className="w-4 h-4" />
-    {label}
-  </button>
-);
-
-const StatCard: React.FC<{ icon: React.ElementType; label: string; value: number; accent?: boolean }> = ({
-  icon: Icon,
-  label,
-  value,
-  accent,
-}) => (
-  <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-    <div className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 ${accent ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
-      <Icon className="w-5 h-5" />
-    </div>
-    <p className="text-2xl font-black text-white font-display">{value.toLocaleString()}</p>
-    <p className="text-xs text-zinc-500 mt-0.5">{label}</p>
+const FullScreen: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="min-h-screen bg-sand-50 dark:bg-charcoal-950 text-zinc-950 dark:text-zinc-100 flex items-center justify-center p-6 transition-colors duration-200">
+    {children}
   </div>
 );
 
-const EmptyRow: React.FC<{ label: string }> = ({ label }) => (
-  <div className="text-center py-14 text-sm text-zinc-500">{label}</div>
+const Card: React.FC<{
+  icon: React.ElementType;
+  title: string;
+  body: React.ReactNode;
+  actions: React.ReactNode;
+  tone: 'danger' | 'warn';
+}> = ({ icon: Icon, title, body, actions, tone }) => (
+  <div className="w-full max-w-md text-center space-y-5">
+    <div
+      className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center ${
+        tone === 'danger'
+          ? 'bg-rose-500/10 text-rose-500'
+          : 'bg-amber-500/10 text-amber-500'
+      }`}
+    >
+      <Icon className="w-8 h-8" />
+    </div>
+    <div className="space-y-2">
+      <h1 className="font-display text-2xl font-black tracking-tight">{title}</h1>
+      <div className="text-sm text-zinc-500 dark:text-zinc-400 space-y-2 leading-relaxed">{body}</div>
+    </div>
+    <div className="flex items-center justify-center gap-3 flex-wrap">{actions}</div>
+  </div>
 );
+
+const BTN =
+  'px-4 py-2.5 font-bold text-sm rounded-xl cursor-pointer transition-colors flex items-center gap-2';
+const PRIMARY_BTN = `${BTN} bg-emerald-600 hover:bg-emerald-500 text-white`;
+const SECONDARY_BTN = `${BTN} bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-750`;
+const DANGER_BTN = `${BTN} bg-rose-600 hover:bg-rose-500 text-white`;

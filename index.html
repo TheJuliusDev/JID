@@ -4,15 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
 <meta name="google-site-verification" content="SbD0IxtF3bY5eb9CakMPYqeBPacFUv3PNd-J4-uCjA8" />
-    <title>JID — OAU Student Marketplace & Accommodation | Great Ife</title>
+    <title>JIDapp — OAU Student Marketplace &amp; Accommodation, Ile-Ife</title>
     <meta
       name="description"
-      content="JID is the verified student marketplace and accommodation platform for Obafemi Awolowo University (OAU), Ile-Ife. Buy, sell, and find lodges around campus — without the WhatsApp chaos."
+      content="JIDapp is the verified student marketplace and accommodation platform for Obafemi Awolowo University (OAU), Ile-Ife. Buy and sell on campus, find lodges near OAU, chat directly with sellers. jidapp.ng"
     />
     <link rel="canonical" href="https://jidapp.ng/" />
-    <meta name="robots" content="index, follow" />
-    <meta name="application-name" content="JID" />
-    <meta name="author" content="JID" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="application-name" content="JIDapp" />
+    <meta name="author" content="JIDapp" />
+    <meta name="geo.region" content="NG-OS" />
+    <meta name="geo.placename" content="Ile-Ife, Osun State, Nigeria" />
+    <meta name="apple-mobile-web-app-title" content="JIDapp" />
 
     <!-- Icons -->
     <link rel="icon" href="/favicon.ico" />
@@ -20,6 +23,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="mask-icon" href="/favicon.svg" color="#0F7358" />
+    <link rel="manifest" href="/site.webmanifest" />
 
     <!-- Theme color (matches app light/dark backgrounds) -->
     <meta name="theme-color" content="#FBFAF8" media="(prefers-color-scheme: light)" />
@@ -27,29 +31,78 @@
     <meta name="color-scheme" content="light dark" />
 
     <!-- Open Graph -->
-    <meta property="og:site_name" content="JID" />
+    <meta property="og:site_name" content="JIDapp" />
     <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_NG" />
     <meta property="og:url" content="https://jidapp.ng/" />
-    <meta property="og:title" content="JID — OAU Student Marketplace & Accommodation" />
+    <meta property="og:title" content="JIDapp — OAU Student Marketplace &amp; Accommodation" />
     <meta
       property="og:description"
-      content="Buy, sell, and find accommodation around Obafemi Awolowo University (OAU), Ile-Ife. A verified student marketplace built for Great Ife — no endless WhatsApp broadcasts."
+      content="Buy, sell, and find lodges around Obafemi Awolowo University (OAU), Ile-Ife. The verified student marketplace and accommodation platform for Great Ife."
     />
-    <meta property="og:locale" content="en_NG" />
-    <meta property="og:image" content="https://jidapp.ng/og-image.svg" />
-    <meta property="og:image:type" content="image/svg+xml" />
+    <!-- Must be a raster image: WhatsApp, Facebook, X and LinkedIn all reject SVG previews. Regenerate with `npm run og`. -->
+    <meta property="og:image" content="https://jidapp.ng/og-image.png" />
+    <meta property="og:image:secure_url" content="https://jidapp.ng/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="JID — OAU Student Marketplace & Accommodation" />
+    <meta property="og:image:alt" content="JIDapp — the verified student marketplace and accommodation platform for OAU, Ile-Ife" />
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="JID — OAU Student Marketplace & Accommodation" />
+    <meta name="twitter:title" content="JIDapp — OAU Student Marketplace &amp; Accommodation" />
     <meta
       name="twitter:description"
       content="Buy, sell, and find lodges around OAU, Ile-Ife. The verified student marketplace and accommodation platform for Great Ife."
     />
-    <meta name="twitter:image" content="https://jidapp.ng/og-image.svg" />
+    <meta name="twitter:image" content="https://jidapp.ng/og-image.png" />
+    <meta name="twitter:image:alt" content="JIDapp — the verified student marketplace and accommodation platform for OAU, Ile-Ife" />
+
+    <!-- Structured data: lets Google render a brand/entity panel instead of a bare blue link -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://jidapp.ng/#organization",
+            "name": "JIDapp",
+            "alternateName": "JID Campus Marketplace & Accommodation",
+            "url": "https://jidapp.ng/",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://jidapp.ng/android-chrome-512x512.png",
+              "width": 512,
+              "height": 512
+            },
+            "description": "JIDapp is the verified student marketplace and accommodation platform for Obafemi Awolowo University (OAU), Ile-Ife.",
+            "areaServed": {
+              "@type": "City",
+              "name": "Ile-Ife",
+              "containedInPlace": {
+                "@type": "State",
+                "name": "Osun State"
+              }
+            },
+            "knowsAbout": [
+              "Student marketplace",
+              "Student accommodation",
+              "Obafemi Awolowo University",
+              "Ile-Ife"
+            ]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://jidapp.ng/#website",
+            "url": "https://jidapp.ng/",
+            "name": "JIDapp",
+            "description": "Buy, sell and find student accommodation across Obafemi Awolowo University (OAU), Ile-Ife.",
+            "publisher": { "@id": "https://jidapp.ng/#organization" },
+            "inLanguage": "en-NG"
+          }
+        ]
+      }
+    </script>
 
     <!-- No-flash theme: apply the saved/system theme before first paint (mirrors ThemeContext) -->
     <script>

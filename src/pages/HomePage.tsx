@@ -3,7 +3,6 @@ import { HeroSection } from '../components/HeroSection';
 import { WhatIsJid } from '../components/home/WhatIsJid';
 import { MarketplacePreview } from '../components/home/MarketplacePreview';
 import { AccommodationPreview } from '../components/home/AccommodationPreview';
-import { VendorHighlight } from '../components/home/VendorHighlight';
 import { AgencyFeesSection } from '../components/home/AgencyFeesSection';
 import { FinalCtaSection } from '../components/FinalCtaSection';
 
@@ -17,8 +16,8 @@ interface HomePageProps {
 
 /**
  * The Home page is intentionally an introduction, not the whole website: a
- * hero, a two-sentence explanation, live previews of the two main features, a
- * short seller pitch, and CTAs. Everything else has a page.
+ * hero, a two-sentence explanation, live previews of the two main features,
+ * and CTAs. Everything else has a page.
  */
 export const HomePage: React.FC<HomePageProps> = ({
   onOpenMarketplace,
@@ -53,8 +52,6 @@ export const HomePage: React.FC<HomePageProps> = ({
       onOpenCreateListing={onOpenCreateListing}
       onOpenProfile={onOpenProfile}
     />
-
-    <VendorHighlight onOpenVendors={onOpenVendors} onOpenCreateListing={onOpenCreateListing} />
 
     <FinalCtaSection
       onExploreMarketplace={onOpenMarketplace}

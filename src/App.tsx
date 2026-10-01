@@ -8,7 +8,7 @@ import { CookieConsentBanner } from './components/cookie/CookieConsentBanner';
 import { MarketplaceItem, PropertyListing } from './types';
 import { configStatus } from './config/env';
 import { RouterProvider, useRouter } from './router/RouterProvider';
-import { isProtectedView } from './router/routes';
+import { isAdminView, isProtectedView } from './router/routes';
 
 // Shared
 import { ConfigError } from './components/common/ConfigError';
@@ -199,8 +199,11 @@ function AppContent() {
 
   const openCreateOrAuth = useCallback(() => requireAuth(openCreate), [requireAuth, openCreate]);
 
-  // ----- Admin (secured; role verified server-side, all data behind RLS) -----
-  if (view === 'admin') {
+  // ----- Admin console -------------------------------------------------------
+  // The console owns the whole screen (no site chrome) and every `/admin/*`
+  // route renders it. `AdminGate` is the security boundary: it asks the database
+  // whether this account is an administrator before anything else is rendered.
+  if (isAdminView(view)) {
     return <AdminGate onExit={() => navigate('home')} />;
   }
 

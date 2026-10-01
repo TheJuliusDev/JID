@@ -253,5 +253,11 @@ export type ViewType =
   | 'messages'
   | 'profile'
   | 'public-profile'
+  // Admin console (each screen is a real URL; all are kept out of `inMainNav`)
   | 'admin'
-  | 'admin-login';
+  | 'admin-users'
+  | 'admin-listings'
+  | 'admin-reports'
+  | 'admin-vendors'
+  | 'admin-reviews'
+  | 'admin-audit';
