@@ -12,19 +12,32 @@ import type { ViewType } from '../types';
 export interface RouteDef {
   /** The view the app renders for this path. */
   view: ViewType;
-  /** Canonical path. `home` is the only route allowed to be `/`. */
+  /** Canonical path. The marketplace is the site's default home, so it owns `/`. */
   path: string;
+  /**
+   * Extra paths that resolve to the same view. The marketplace answers to
+   * `/marketplace` as well, so old links and bookmarks keep working.
+   */
+  aliases?: string[];
+  /**
+   * Path to declare as canonical for this view, when it is reachable under more
+   * than one URL. Defaults to `path`. See `applyRouteMeta`.
+   */
+  canonical?: string;
   /** Document title suffix — the router sets `document.title` on navigation. */
   title: string;
   /** Show in the primary desktop / mobile navigation. */
   inMainNav?: boolean;
-  /** Requires a signed-in user; the app bounces to Home and opens auth. */
+  /** Requires a signed-in user; the app bounces home and opens auth. */
   requiresAuth?: boolean;
 }
 
 export const ROUTES: RouteDef[] = [
-  { view: 'home', path: '/', title: 'OAU Student Marketplace & Accommodation', inMainNav: true },
-  { view: 'marketplace', path: '/marketplace', title: 'Marketplace', inMainNav: true },
+  // The marketplace is the default home: `/` and `/marketplace` are the same
+  // view, with `/` canonical.
+  { view: 'marketplace', path: '/', aliases: ['/marketplace'], title: 'OAU Student Marketplace', inMainNav: true },
+  // The marketing landing page lives on its own URL now.
+  { view: 'home', path: '/home', title: 'Buy & Sell on Campus', inMainNav: true },
   { view: 'accommodation', path: '/accommodation', title: 'Accommodation', inMainNav: true },
   { view: 'vendors', path: '/vendors', title: 'Sell on JID', inMainNav: true },
   { view: 'about', path: '/about', title: 'About JID', inMainNav: true },
@@ -102,7 +115,9 @@ export const matchPath = (pathname: string): RouteMatch => {
   const path = normalize(pathname);
 
   for (const route of ALL_ROUTES) {
-    if (route.path === path) return { view: route.view, params: {}, path };
+    if (route.path === path || route.aliases?.includes(path)) {
+      return { view: route.view, params: {}, path };
+    }
   }
 
   // Parameterised route: /u/:username

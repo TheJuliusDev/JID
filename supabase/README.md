@@ -28,6 +28,13 @@ This creates every table, enum, index, function, trigger, view and Row Level
 Security policy the app relies on, and registers the realtime tables. It is safe
 to re-run if you change the file later.
 
+> **Updating an existing project:** apply the files in
+> [`migrations/`](./migrations) in order (currently `002_admin_panel.sql`,
+> `003_admin_email_lock.sql`, `004_search_and_filters.sql`, then
+> `005_saved_searches_and_alerts.sql`). `004` adds the indexed full-text search
+> and filter RPCs used by the marketplace and accommodation explorers. `005`
+> adds saved searches, price-drop alerts and new-match alert generation.
+
 ## 3. Configure Authentication
 
 In **Authentication → Providers → Email**:
@@ -113,13 +120,107 @@ server-side, enable **pg_cron** (Database → Extensions) and schedule it:
 select cron.schedule('expire-jid-boosts', '*/15 * * * *', $$ select public.expire_boosts(); $$);
 ```
 
-## 9. Verify
+## 9. Messaging upgrade (required for the new chat)
+
+The production chat features — presence, replies, image/voice messages, search,
+pinning, archiving, blocking, chat reports and Web Push — all land in one
+migration. **The app's new UI will not work until it is applied.**
+
+1. SQL Editor → paste the whole of
+   [`migrations/006_messaging_upgrade.sql`](./migrations/006_messaging_upgrade.sql)
+   → **Run**.
+
+   It is additive and idempotent (`if not exists` / `drop ... if exists`
+   throughout), so re-running it is safe. Two things to know about it:
+
+   - It **drops and recreates `get_my_conversations()`**. The function's return
+     type is wider than the original, and Postgres refuses to change a return
+     type in place. Nothing depends on it by name, so this is safe.
+   - It **deletes existing `notifications` rows of type `message`** and stops
+     `notify_new_message()` from creating new ones. Messages and the bell are
+     now separate systems: a new message updates `conversations.last_message_at`
+     and nothing else, and the bell shows only saved-search and moderation
+     alerts. This is intended — leaving it out would double-notify every message.
+
+2. Add the push **public** key to the app's environment (see section 7 of the
+   root README / `.env`):
+
+   ```
+   EXPO_PUBLIC_VAPID_PUBLIC_KEY=<your public key>
+   ```
+
+   Push is optional. Without it the app still runs; it just cannot deliver
+   background notifications, and the "Enable notifications" prompt is hidden.
+
+3. Deploy the push sender:
+
+   ```bash
+   supabase functions deploy notify-push --no-verify-jwt
+   ```
+
+4. Set the sender's secrets:
+
+   ```bash
+   npx web-push generate-vapid-keys   # run once, keep the private key safe
+   supabase secrets set \
+     VAPID_PUBLIC_KEY=<public key> \
+     VAPID_PRIVATE_KEY=<private key> \
+     VAPID_SUBJECT=mailto:you@yourdomain.com
+   ```
+
+5. Wire the sender to new messages. Dashboard → **Database → Webhooks → Add
+   Webhook**:
+
+   - Source: `messages`
+   - Events: `Insert`
+   - Type: `HTTP Request`
+   - URL: `https://<project-ref>.supabase.co/functions/v1/notify-push`
+   - Body:
+     ```json
+     { "record": {{ record }} }
+     ```
+
+   Without this webhook nothing calls the function and no push is ever sent.
+   The webhook fires *after* the message commits, so a slow or failing push
+   service can never delay or fail an actual send.
+
+6. Allow audio recording in the Cloudinary upload preset used by the app
+   (Settings → Upload → your preset → "Allowed formats" must include `webm`,
+   `mp4`, `mp3` and `m4a`; audio/video resources are uploaded through the
+   `video` resource type). Without this, voice notes fail at upload while image
+   uploads still work.
+
+7. (Optional) Schedule the housekeeping function so dead subscriptions and stale
+   presence rows are pruned:
+
+   ```sql
+   select cron.schedule('prune-jid-push', '17 3 * * *', $$ select public.prune_push_subscriptions(); $$);
+   ```
+
+### What Web Push can and cannot do here
+
+- **Chrome / Edge / Samsung Internet on Android** — works, including when the app
+  is fully closed.
+- **iOS Safari** — works only from an installed Home Screen web app (iOS 16.4+),
+  and permission must be requested from a user gesture. There is no equivalent
+  to an Expo push token in a browser.
+- **Firefox desktop** — works.
+- Notification permission is **never** requested on first launch. It is offered
+  once the student opens a conversation, and declining is remembered for the
+  session.
+
+## 10. Verify
 
 - Sign up → a row appears in `public.profiles` and `public.user_roles`.
 - Create a listing with images → images resolve to `res.cloudinary.com` URLs
   and a row appears in `marketplace_listings` / `property_listings`.
-- Open a second account, message the first → the message appears live (realtime)
-  and a notification row is created.
+- Open a second account, message the first → the message appears live (realtime).
+  **No `notifications` row is created** — check that the bell count is unchanged.
+- Send a photo and a voice note → both render in the other account.
+- Close the browser, send from the second account → a system notification appears
+  within a second or two, and tapping it opens that conversation.
+- Block the second account, then try to send → the send fails and the thread
+  disappears from the list. Unblock from Account Settings → it is reachable again.
 - Type `/admin` as a normal user → access denied. As the promoted admin → the
   dashboard loads.
 
@@ -135,7 +236,12 @@ select cron.schedule('expire-jid-boosts', '*/15 * * * *', $$ select public.expir
 | `property_listings` | Accommodation listings. |
 | `saved_listings` | Per-user private bookmarks. |
 | `conversations` / `conversation_participants` / `messages` | In-app messaging. |
-| `notifications` | Per-user notifications (created by triggers). |
+| `message_deletions` | Per-student "delete for me". One participant hiding a message. |
+| `blocks` | Directional blocks. Blocks both messaging and new conversations. |
+| `chat_reports` | Moderation queue for chat content, keyed to a conversation. |
+| `push_subscriptions` | Web Push endpoints. Read by the `notify-push` Edge Function only. |
+| `app_sessions` | "App is open" heartbeat, so push is skipped for students already looking. |
+| `notifications` | Per-user notifications (created by triggers). **No longer carries messages.** |
 | `vendor_reviews` | 1–5 star reviews, one per reviewer per vendor, gated on prior interaction. |
 | `listing_reports` / `user_reports` | Moderation queue. |
 | `listing_boosts` | Watch-2-ads → 24h visibility boost history. |

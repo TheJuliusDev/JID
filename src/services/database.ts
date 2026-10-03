@@ -8,15 +8,23 @@ import type {
   MarketplaceItem,
   PropertyListing,
   SavedItem,
+  SavedSearch,
   Conversation,
   Message,
   NotificationItem,
+  NotificationCategory,
   VendorReview,
   VendorRatingSummary,
   PublicProfile,
   UserProfile,
   ReportItem,
   ListingCategory,
+  MessageKind,
+  ImageMessageMeta,
+  VoiceMessageMeta,
+  MessageReplyPreview,
+  ChatReportReason,
+  BlockedUser,
 } from '../types';
 import type { ItemCondition } from '../config/brand';
 
@@ -123,6 +131,7 @@ export function mapPublicProfile(row: any): PublicProfile {
 }
 
 function mapMessage(row: any): Message {
+  const kind = resolveMessageKind(row.content, row.kind);
   return {
     id: row.id,
     conversationId: row.conversation_id,
@@ -131,6 +140,37 @@ function mapMessage(row: any): Message {
     createdAt: row.created_at,
     readAt: row.read_at || undefined,
     deletedAt: row.deleted_at || undefined,
+    kind,
+    imageMeta: mapImageMeta(kind, row.content, row.metadata),
+    voiceMeta: mapVoiceMeta(kind, row.metadata),
+    replyToId: row.reply_to_id || undefined,
+    clientId: row.client_id || undefined,
+    replyTo: (row.reply_snapshot as MessageReplyPreview) || undefined,
+    hiddenForMe: Boolean(row.hidden_for_me),
+  };
+}
+
+/**
+ * Per-kind extras live in `messages.metadata`. Reading tolerates a malformed
+ * payload rather than throwing: one bad row must not take down the whole thread.
+ * Images additionally fall back to the legacy `jid://photo/` content prefix.
+ */
+function mapImageMeta(kind: MessageKind, content: string, meta: any): ImageMessageMeta | undefined {
+  if (kind !== 'image') return undefined;
+  const urls = Array.isArray(meta?.urls)
+    ? meta.urls.filter((u: unknown) => typeof u === 'string')
+    : isPhotoMessage(content)
+      ? [photoMessageUrl(content)]
+      : [];
+  return urls.length ? { urls } : undefined;
+}
+
+function mapVoiceMeta(kind: MessageKind, meta: any): VoiceMessageMeta | undefined {
+  if (kind !== 'voice' || typeof meta?.url !== 'string') return undefined;
+  return {
+    url: meta.url,
+    durationMs: Number(meta.durationMs) || 0,
+    peaks: Array.isArray(meta.peaks) ? meta.peaks.map(Number) : undefined,
   };
 }
 
@@ -162,10 +202,39 @@ export function isDeletedMessage(content: string): boolean {
   return content.startsWith(DELETED_MESSAGE_MARKER);
 }
 
-/** Human-friendly preview of a message body (photos are never shown as URLs). */
-export function messageSummary(content: string): string {
-  if (isDeletedMessage(content)) return 'Message deleted';
-  return isPhotoMessage(content) ? 'Sent a photo' : content;
+/**
+ * Resolve a row's effective kind.
+ *
+ * `messages.kind` is authoritative, but two legacy cases still exist in
+ * production data and in payloads from an older client that is still installed
+ * on someone's phone:
+ *   1. rows written before migration 006 (backfilled there, but a client on the
+ *      old build can still create new ones),
+ *   2. a photo whose `content` carries the `jid://photo/` prefix.
+ * Deriving from the prefix as a fallback means an old client cannot make a photo
+ * render as a raw URL.
+ */
+export function resolveMessageKind(content: string, kind?: string | null): MessageKind {
+  if (kind === 'image' || kind === 'voice') return kind;
+  if (isPhotoMessage(content)) return 'image';
+  return 'text';
+}
+
+/**
+ * Human-friendly one-line preview for the conversation list and notifications.
+ * Never leaks a storage URL.
+ */
+export function messageSummary(message: {
+  content: string;
+  kind?: string | null;
+  imageMeta?: ImageMessageMeta;
+  voiceMeta?: VoiceMessageMeta;
+}): string {
+  if (isDeletedMessage(message.content)) return 'Message deleted';
+  const kind = resolveMessageKind(message.content, message.kind);
+  if (kind === 'image') return 'Sent a photo';
+  if (kind === 'voice') return 'Sent a voice message';
+  return message.content;
 }
 
 function mapNotification(row: any): NotificationItem {
@@ -175,6 +244,7 @@ function mapNotification(row: any): NotificationItem {
     title: row.title,
     message: row.body,
     type: row.type,
+    category: (row.category as NotificationCategory) || undefined,
     link: row.link || undefined,
     isRead: Boolean(row.is_read),
     createdAt: row.created_at,
@@ -196,9 +266,6 @@ function mapReview(row: any): VendorReview {
       : undefined,
   };
 }
-
-/** Escape characters that would break a PostgREST .or() filter string. */
-const sanitizeSearch = (term: string) => term.replace(/[,()%\\]/g, ' ').trim();
 
 // ---------------------------------------------------------------------------
 // Profiles
@@ -230,6 +297,56 @@ export async function updateMyProfile(userId: string, updates: Partial<UserProfi
   if (error) throw error;
 }
 
+/**
+ * Presence privacy.
+ *
+ * Split from `updateMyProfile()` on purpose: these are messaging privacy
+ * switches, not profile fields, and routing them through the generic profile
+ * updater would put presence columns on the same code path as a name change.
+ *
+ * `presence_visible` is what the UI reads to decide whether to show the Online
+ * row at all; `last_seen_visible` is the finer-grained control for the timestamp
+ * on its own. Turning presence off implies hiding the timestamp too, so that a
+ * single switch always hides everything.
+ */
+export async function setPresenceVisible(userId: string, visible: boolean): Promise<void> {
+  const sb = requireSupabase();
+  const { error } = await sb
+    .from('profiles')
+    .update({ presence_visible: visible, last_seen_visible: visible })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+export async function setLastSeenVisible(userId: string, visible: boolean): Promise<void> {
+  const sb = requireSupabase();
+  const { error } = await sb
+    .from('profiles')
+    .update({ last_seen_visible: visible })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+/** Read the caller's own presence switches, for the settings screen. */
+export async function fetchMyPresenceSettings(userId: string): Promise<{
+  presenceVisible: boolean;
+  lastSeenVisible: boolean;
+}> {
+  const sb = requireSupabase();
+  const { data, error } = await sb
+    .from('profiles')
+    .select('presence_visible, last_seen_visible')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return {
+    // Default to true: a student who has never touched the settings is visible,
+    // which matches the column default and avoids a blank first render.
+    presenceVisible: data?.presence_visible !== false,
+    lastSeenVisible: data?.last_seen_visible !== false,
+  };
+}
+
 export async function getPublicProfileByUsername(username: string): Promise<PublicProfile | null> {
   const sb = requireSupabase();
   const { data, error } = await sb
@@ -250,52 +367,57 @@ export async function isUsernameAvailable(username: string): Promise<boolean> {
 // ---------------------------------------------------------------------------
 // Marketplace
 // ---------------------------------------------------------------------------
+export type SearchSort = 'boosted' | 'newest' | 'price-asc' | 'price-desc' | 'relevance';
+
 export interface MarketplaceQuery {
   search?: string;
   category?: string;
   condition?: string;
   location?: string;
-  sort?: 'boosted' | 'newest' | 'price-asc' | 'price-desc';
+  minPrice?: number;
+  maxPrice?: number;
+  boostedOnly?: boolean;
+  sort?: SearchSort;
   limit?: number;
   offset?: number;
 }
 
-export async function listMarketplace(q: MarketplaceQuery = {}): Promise<MarketplaceItem[]> {
+export interface SearchResults<T> {
+  items: T[];
+  /** Total rows matching the filters, independent of the current page. */
+  total: number;
+}
+
+/** Reads the shared `total_count` window value the search RPCs attach to each row. */
+const readTotal = (rows: any[]): number => (rows.length ? Number(rows[0].total_count) || 0 : 0);
+
+/**
+ * Advanced, server-side marketplace search. Runs the `search_marketplace` RPC
+ * so full-text ranking, price ranges, boost-only filtering and the total count
+ * all happen in Postgres against indexes — the browser never filters rows.
+ */
+export async function searchMarketplace(q: MarketplaceQuery = {}): Promise<SearchResults<MarketplaceItem>> {
   const sb = requireSupabase();
-  const limit = q.limit ?? 24;
-  const offset = q.offset ?? 0;
-  let query = sb
-    .from('marketplace_listings')
-    .select(`*, ${SELLER_EMBED}`)
-    .eq('status', 'active');
-
-  if (q.category && q.category !== 'all') query = query.eq('category', q.category);
-  if (q.condition) query = query.eq('condition', q.condition);
-  if (q.location) query = query.eq('location', q.location);
-  if (q.search) {
-    const s = sanitizeSearch(q.search);
-    if (s) query = query.or(`title.ilike.%${s}%,description.ilike.%${s}%,location.ilike.%${s}%`);
-  }
-
-  switch (q.sort) {
-    case 'price-asc':
-      query = query.order('price', { ascending: true });
-      break;
-    case 'price-desc':
-      query = query.order('price', { ascending: false });
-      break;
-    case 'newest':
-      query = query.order('created_at', { ascending: false });
-      break;
-    default:
-      query = query
-        .order('boosted_until', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false });
-  }
-
-  const { data, error } = await query.range(offset, offset + limit - 1);
+  const { data, error } = await sb.rpc('search_marketplace', {
+    p_search: q.search?.trim() || null,
+    p_category: q.category && q.category !== 'all' ? q.category : null,
+    p_condition: q.condition && q.condition !== 'all' ? q.condition : null,
+    p_location: q.location && q.location !== 'all' ? q.location : null,
+    p_min_price: q.minPrice ?? null,
+    p_max_price: q.maxPrice ?? null,
+    p_boosted_only: q.boostedOnly ?? false,
+    p_sort: q.sort ?? 'boosted',
+    p_limit: q.limit ?? 24,
+    p_offset: q.offset ?? 0,
+  });
   if (error) throw error;
-  return (data || []).map(mapMarketplace);
+  const rows = (data || []) as any[];
+  return { items: rows.map(mapMarketplace), total: readTotal(rows) };
+}
+
+/** Backwards-compatible array-only wrapper used by previews and the hero. */
+export async function listMarketplace(q: MarketplaceQuery = {}): Promise<MarketplaceItem[]> {
+  return (await searchMarketplace(q)).items;
 }
 
 export async function listMarketplaceByUser(userId: string): Promise<MarketplaceItem[]> {
@@ -392,49 +514,39 @@ export interface PropertyQuery {
   roomType?: string;
   area?: string;
   availability?: string;
+  minPrice?: number;
   maxPrice?: number;
-  sort?: 'boosted' | 'newest' | 'price-asc' | 'price-desc';
+  verifiedOnly?: boolean;
+  boostedOnly?: boolean;
+  sort?: SearchSort;
   limit?: number;
   offset?: number;
 }
 
-export async function listProperties(q: PropertyQuery = {}): Promise<PropertyListing[]> {
+/** Advanced, server-side accommodation search (see `searchMarketplace`). */
+export async function searchProperties(q: PropertyQuery = {}): Promise<SearchResults<PropertyListing>> {
   const sb = requireSupabase();
-  const limit = q.limit ?? 24;
-  const offset = q.offset ?? 0;
-  let query = sb
-    .from('property_listings')
-    .select(`*, ${LANDLORD_EMBED}`)
-    .eq('status', 'active');
-
-  if (q.roomType) query = query.eq('room_type', q.roomType);
-  if (q.area) query = query.eq('area', q.area);
-  if (q.availability) query = query.eq('availability', q.availability);
-  if (q.maxPrice) query = query.lte('price_per_year', q.maxPrice);
-  if (q.search) {
-    const s = sanitizeSearch(q.search);
-    if (s) query = query.or(`title.ilike.%${s}%,description.ilike.%${s}%,area.ilike.%${s}%`);
-  }
-
-  switch (q.sort) {
-    case 'price-asc':
-      query = query.order('price_per_year', { ascending: true });
-      break;
-    case 'price-desc':
-      query = query.order('price_per_year', { ascending: false });
-      break;
-    case 'newest':
-      query = query.order('created_at', { ascending: false });
-      break;
-    default:
-      query = query
-        .order('boosted_until', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false });
-  }
-
-  const { data, error } = await query.range(offset, offset + limit - 1);
+  const { data, error } = await sb.rpc('search_properties', {
+    p_search: q.search?.trim() || null,
+    p_area: q.area && q.area !== 'all' ? q.area : null,
+    p_room_type: q.roomType && q.roomType !== 'all' ? q.roomType : null,
+    p_availability: q.availability && q.availability !== 'all' ? q.availability : null,
+    p_min_price: q.minPrice ?? null,
+    p_max_price: q.maxPrice ?? null,
+    p_verified_only: q.verifiedOnly ?? false,
+    p_boosted_only: q.boostedOnly ?? false,
+    p_sort: q.sort ?? 'boosted',
+    p_limit: q.limit ?? 24,
+    p_offset: q.offset ?? 0,
+  });
   if (error) throw error;
-  return (data || []).map(mapProperty);
+  const rows = (data || []) as any[];
+  return { items: rows.map(mapProperty), total: readTotal(rows) };
+}
+
+/** Backwards-compatible array-only wrapper used by previews and the hero. */
+export async function listProperties(q: PropertyQuery = {}): Promise<PropertyListing[]> {
+  return (await searchProperties(q)).items;
 }
 
 export async function listPropertiesByUser(userId: string): Promise<PropertyListing[]> {
@@ -583,6 +695,79 @@ export async function removeSaved(userId: string, type: 'marketplace' | 'propert
 }
 
 // ---------------------------------------------------------------------------
+// Saved searches + alerts
+// ---------------------------------------------------------------------------
+function mapSavedSearch(row: any): SavedSearch {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    listingType: row.listing_type,
+    label: row.label,
+    filters: row.filters || {},
+    notify: row.notify !== false,
+    createdAt: row.created_at,
+    lastNotifiedAt: row.last_notified_at || undefined,
+  };
+}
+
+export async function listSavedSearches(userId: string): Promise<SavedSearch[]> {
+  const sb = requireSupabase();
+  const { data, error } = await sb
+    .from('saved_searches')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data || []).map(mapSavedSearch);
+}
+
+export async function createSavedSearch(
+  userId: string,
+  input: {
+    listingType: 'marketplace' | 'property';
+    label: string;
+    filters: Record<string, string | number | boolean>;
+    notify?: boolean;
+  }
+): Promise<SavedSearch> {
+  const sb = requireSupabase();
+  const { data, error } = await sb
+    .from('saved_searches')
+    .insert({
+      user_id: userId,
+      listing_type: input.listingType,
+      label: input.label,
+      filters: input.filters,
+      notify: input.notify ?? true,
+    })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapSavedSearch(data);
+}
+
+export async function removeSavedSearch(id: string) {
+  const sb = requireSupabase();
+  const { error } = await sb.from('saved_searches').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function setSavedSearchNotify(id: string, notify: boolean) {
+  const sb = requireSupabase();
+  const { error } = await sb.from('saved_searches').update({ notify }).eq('id', id);
+  if (error) throw error;
+}
+
+/** Raise alerts for new listings matching the caller's saved searches.
+ * Returns the number of notifications created. */
+export async function generateSavedSearchAlerts(): Promise<number> {
+  const sb = requireSupabase();
+  const { data, error } = await sb.rpc('generate_saved_search_alerts');
+  if (error) throw error;
+  return Number(data) || 0;
+}
+
+// ---------------------------------------------------------------------------
 // Messaging
 // ---------------------------------------------------------------------------
 export async function getOrCreateConversation(
@@ -616,6 +801,9 @@ export async function fetchConversations(): Promise<Conversation[]> {
       department: r.other_department || undefined,
       level: r.other_level || undefined,
       hallOrArea: r.other_hall_or_area || undefined,
+      // Already nulled server-side when that student hid their presence.
+      lastSeenAt: r.other_last_seen_at || undefined,
+      presenceVisible: r.other_presence_visible !== false,
     },
     lastMessage: r.last_message
       ? {
@@ -624,10 +812,14 @@ export async function fetchConversations(): Promise<Conversation[]> {
           senderId: r.last_sender_id,
           content: r.last_message,
           createdAt: r.last_message_at,
+          kind: resolveMessageKind(r.last_message, r.last_message_kind),
         }
       : undefined,
     unreadCount: Number(r.unread_count) || 0,
     lastMessageAt: r.last_message_at,
+    pinnedAt: r.pinned_at || undefined,
+    archivedAt: r.archived_at || undefined,
+    isBlocked: Boolean(r.is_blocked),
     listingRef: r.listing_id
       ? {
           id: r.listing_id,
@@ -640,16 +832,47 @@ export async function fetchConversations(): Promise<Conversation[]> {
   }));
 }
 
+/**
+ * Select list for a message row.
+ *
+ * `reply` self-joins through the `reply_to_id` foreign key so every message
+ * carries its own quote preview in the same round trip — the bubble never has to
+ * go looking for the parent. RLS on `messages` already limits the join to rows
+ * in conversations the caller participates in.
+ */
+const MESSAGE_SELECT =
+  '*, reply:messages!messages_reply_to_fkey(id, sender_id, kind, content, created_at, deleted_at)';
+
+function mapMessageWithReply(row: any): Message {
+  const base = mapMessage(row);
+  const parent = Array.isArray(row.reply) ? row.reply[0] : row.reply;
+  if (!parent || !base.replyToId) return base;
+  return {
+    ...base,
+    replyTo: {
+      id: parent.id,
+      senderId: parent.sender_id,
+      kind: resolveMessageKind(parent.content, parent.kind),
+      preview: messageSummary({
+        content: parent.content,
+        kind: parent.kind,
+      }),
+      createdAt: parent.created_at,
+    },
+  };
+}
+
 export async function fetchMessages(conversationId: string, limit = 50): Promise<Message[]> {
   const sb = requireSupabase();
   const { data, error } = await sb
     .from('messages')
-    .select('*')
+    .select(MESSAGE_SELECT)
     .eq('conversation_id', conversationId)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return (data || []).map(mapMessage).reverse();
+  return (data || []).map(mapMessageWithReply).reverse();
 }
 
 /** Load an earlier page of history (builds on `fetchMessages` via a created_at cursor). */
@@ -661,13 +884,49 @@ export async function fetchMessagesBefore(
   const sb = requireSupabase();
   const { data, error } = await sb
     .from('messages')
-    .select('*')
+    .select(MESSAGE_SELECT)
     .eq('conversation_id', conversationId)
+    .is('deleted_at', null)
     .lt('created_at', beforeCreatedAt)
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return (data || []).map(mapMessage).reverse();
+  return (data || []).map(mapMessageWithReply).reverse();
+}
+
+/**
+ * Search inside one conversation.
+ *
+ * Ranked server-side on the `messages.search_tsv` GIN index, so a long thread
+ * costs the same as a short one. `snippet` comes back with `<mark>` around each
+ * hit for highlighting without re-querying.
+ */
+export async function searchMessages(
+  conversationId: string,
+  query: string,
+  limit = 40
+): Promise<Array<Message & { snippet: string }>> {
+  const sb = requireSupabase();
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const { data, error } = await sb.rpc('search_messages', {
+    conv_id: conversationId,
+    q: trimmed,
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return (data || []).map((r: any) => ({
+    id: r.message_id,
+    conversationId,
+    senderId: r.sender_id,
+    content: r.content,
+    createdAt: r.created_at,
+    readAt: r.read_at || undefined,
+    kind: resolveMessageKind(r.content, r.kind),
+    replyToId: r.reply_to_id || undefined,
+    snippet: String(r.snippet || '').replace(/<\/?mark>/g, ''),
+    highlightedSnippet: String(r.snippet || ''),
+  }));
 }
 
 /** Ack the other participant's messages in this thread as read (read receipt). */
@@ -682,15 +941,44 @@ export async function markThreadRead(conversationId: string, userId: string) {
   if (error) throw error;
 }
 
-export async function sendMessage(conversationId: string, senderId: string, content: string): Promise<Message> {
+export interface SendMessageInput {
+  content: string;
+  kind?: MessageKind;
+  metadata?: Record<string, unknown>;
+  replyToId?: string;
+}
+
+/**
+ * Insert a message.
+ *
+ * `clientId` is written to `client_id` so the sender can reconcile the row that
+ * comes back (and the realtime INSERT that races it) against the optimistic
+ * bubble it already painted. Without it, a send can briefly appear twice.
+ */
+export async function sendMessage(
+  conversationId: string,
+  senderId: string,
+  input: string | SendMessageInput,
+  clientId?: string
+): Promise<Message> {
   const sb = requireSupabase();
+  const payload: Record<string, unknown> =
+    typeof input === 'string' ? { content: input } : { content: input.content };
+
+  if (typeof input !== 'string') {
+    if (input.kind) payload.kind = input.kind;
+    if (input.metadata) payload.metadata = input.metadata;
+    if (input.replyToId) payload.reply_to_id = input.replyToId;
+  }
+  if (clientId) payload.client_id = clientId;
+
   const { data, error } = await sb
     .from('messages')
-    .insert({ conversation_id: conversationId, sender_id: senderId, content })
-    .select('*')
+    .insert({ conversation_id: conversationId, sender_id: senderId, ...payload })
+    .select(MESSAGE_SELECT)
     .single();
   if (error) throw error;
-  return mapMessage(data);
+  return mapMessageWithReply(data);
 }
 
 /** Soft-delete a message the caller sent: content is wiped and deleted_at is
@@ -707,35 +995,263 @@ export async function deleteMessage(messageId: string): Promise<Message> {
   return mapMessage(data);
 }
 
+/**
+ * Delete for me — hides a message on this device only.
+ *
+ * Deliberately a separate table rather than an update to `messages`: wiping
+ * `content` would destroy the copy the other side still needs, and the sender
+ * may not even have permission to edit someone else's row.
+ */
+export async function hideMessage(messageId: string, conversationId: string): Promise<void> {
+  const sb = requireSupabase();
+  const { data } = await sb.auth.getUser();
+  const userId = data.user?.id;
+  if (!userId) throw new Error('You must be signed in.');
+  const { error } = await sb
+    .from('message_deletions')
+    .upsert({ message_id: messageId, user_id: userId, conversation_id: conversationId });
+  if (error) throw error;
+}
+
+/**
+ * Ids the caller has hidden in this thread. One indexed lookup, and the result
+ * is applied on load and merged in realtime via `subscribeToMessageDeletions`.
+ */
+export async function fetchHiddenMessageIds(conversationId: string): Promise<string[]> {
+  const sb = requireSupabase();
+  const { data, error } = await sb
+    .from('message_deletions')
+    .select('message_id')
+    .eq('conversation_id', conversationId);
+  if (error) throw error;
+  return (data || []).map((r: any) => r.message_id as string);
+}
+
 export async function markConversationRead(conversationId: string) {
   const sb = requireSupabase();
   await sb.rpc('mark_conversation_read', { conv_id: conversationId });
 }
 
+export interface MessageSubscriptionHandlers {
+  onInsert: (m: Message) => void;
+  /** Read receipts and soft-deletes, from either side. */
+  onUpdate?: (m: Message) => void;
+  /** Another device of this same student hid a message for themselves. */
+  onHidden?: (messageId: string) => void;
+}
+
+/**
+ * Realtime for one open conversation.
+ *
+ * Also watches `message_deletions` so a hide performed on the phone lands on the
+ * laptop without a refresh. Returns an unsubscribe function; callers must call
+ * it on unmount or the socket leaks and duplicate messages start arriving.
+ */
 export function subscribeToMessages(
   conversationId: string,
-  onInsert: (m: Message) => void,
+  handlers: MessageSubscriptionHandlers | ((m: Message) => void),
   onUpdate?: (m: Message) => void
 ): () => void {
+  // Kept callable as subscribeToMessages(id, onInsert) for existing callers.
+  const h: MessageSubscriptionHandlers =
+    typeof handlers === 'function'
+      ? { onInsert: handlers, onUpdate }
+      : handlers;
+
   const sb = requireSupabase();
   const channel = sb
     .channel(`messages:${conversationId}`)
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
-      (payload) => onInsert(mapMessage(payload.new))
+      (payload) => h.onInsert(mapMessage(payload.new))
     );
-  if (onUpdate) {
+
+  // Bound into locals because TypeScript cannot re-narrow the optional handlers
+  // inside the callbacks below: `h` is a mutable binding, so narrowing is not
+  // preserved across the closure boundary.
+  const updateHandler = h.onUpdate;
+  const hiddenHandler = h.onHidden;
+
+  if (updateHandler) {
     channel.on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
-      (payload) => onUpdate(mapMessage(payload.new))
+      (payload) => updateHandler(mapMessage(payload.new))
     );
   }
+
+  if (hiddenHandler) {
+    channel.on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'message_deletions',
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      (payload) => hiddenHandler((payload.new as any)?.message_id as string)
+    );
+  }
+
   channel.subscribe();
   return () => {
     sb.removeChannel(channel);
   };
+}
+
+/**
+ * Live updates to pin/archive flags for the conversations on screen.
+ *
+ * Scoped by `user_id` rather than per-conversation so one channel covers the
+ * whole list; the payload carries the conversation id the row belongs to.
+ */
+export function subscribeToParticipantChanges(
+  userId: string,
+  onChange: (row: { conversationId: string; pinnedAt?: string; archivedAt?: string }) => void
+): () => void {
+  const sb = requireSupabase();
+  const channel = sb
+    .channel(`participants:${userId}`)
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'conversation_participants', filter: `user_id=eq.${userId}` },
+      (payload) => {
+        const row = payload.new as any;
+        onChange({
+          conversationId: row.conversation_id,
+          pinnedAt: row.pinned_at || undefined,
+          archivedAt: row.archived_at || undefined,
+        });
+      }
+    )
+    .subscribe();
+  return () => {
+    sb.removeChannel(channel);
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Pin, archive, block, report
+// ---------------------------------------------------------------------------
+
+/**
+ * Realtime for the *conversation list* itself.
+ *
+ * This exists because messages no longer write a `notifications` row (see
+ * migration 006): the conversation list has to react to `messages` directly, or
+ * an unread badge would only update after a manual refresh or a full reload.
+ *
+ * There is deliberately no `conversation_id=eq.*` filter. Supabase applies the
+ * `messages` SELECT policy before delivering a change, so a student only ever
+ * receives inserts from threads they are actually in — adding a filter would
+ * mean re-subscribing every time the thread list changes, for no extra privacy.
+ *
+ * `onMessage` is debounced by the caller; this fires per row.
+ */
+export function subscribeToConversationActivity(
+  onMessage: (conversationId: string) => void
+): () => void {
+  const sb = requireSupabase();
+  const channel = sb
+    .channel('messages:activity')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages' },
+      (payload) => {
+        const convId = (payload.new as any)?.conversation_id;
+        if (convId) onMessage(convId);
+      }
+    )
+    .subscribe();
+  return () => {
+    sb.removeChannel(channel);
+  };
+}
+
+export async function setConversationPinned(conversationId: string, pinned: boolean): Promise<void> {
+  const sb = requireSupabase();
+  const { error } = await sb.rpc('set_conversation_pinned', { conv_id: conversationId, pinned });
+  if (error) throw error;
+}
+
+export async function setConversationArchived(conversationId: string, archived: boolean): Promise<void> {
+  const sb = requireSupabase();
+  const { error } = await sb.rpc('set_conversation_archived', { conv_id: conversationId, archived });
+  if (error) throw error;
+}
+
+export async function blockUser(userId: string, reason?: string): Promise<void> {
+  const sb = requireSupabase();
+  const { error } = await sb.rpc('block_user', { other_user: userId, p_reason: reason ?? null });
+  if (error) throw error;
+}
+
+export async function unblockUser(userId: string): Promise<void> {
+  const sb = requireSupabase();
+  const { error } = await sb.rpc('unblock_user', { other_user: userId });
+  if (error) throw error;
+}
+
+export async function listBlockedUsers(): Promise<BlockedUser[]> {
+  const sb = requireSupabase();
+  const { data, error } = await sb
+    .from('blocks')
+    .select('blocked_id, created_at, profile:profiles!blocks_blocked_id_fkey(username, full_name, avatar_url)')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data || []).map((r: any) => {
+    const p = Array.isArray(r.profile) ? r.profile[0] : r.profile;
+    return {
+      id: r.blocked_id,
+      username: p?.username || undefined,
+      fullName: p?.full_name || 'JID Student',
+      avatarUrl: p?.avatar_url || undefined,
+      blockedAt: r.created_at,
+    };
+  });
+}
+
+/**
+ * Report a user, optionally pinned to a specific message and/or conversation.
+ *
+ * Insert-only by design: the caller learns nothing about anyone else's reports,
+ * and resolution happens entirely in the admin console.
+ */
+export async function submitChatReport(input: {
+  reportedUserId: string;
+  conversationId?: string;
+  messageId?: string;
+  reason: ChatReportReason;
+  details?: string;
+}): Promise<void> {
+  const sb = requireSupabase();
+  const { data: auth, error: authErr } = await sb.auth.getUser();
+  if (authErr) throw authErr;
+  const { error } = await sb.from('chat_reports').insert({
+    reporter_id: auth.user?.id ?? null,
+    reported_user_id: input.reportedUserId,
+    conversation_id: input.conversationId ?? null,
+    message_id: input.messageId ?? null,
+    reason: input.reason,
+    details: input.details?.trim() || null,
+  });
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
+// Presence
+// ---------------------------------------------------------------------------
+
+/**
+ * Record that the caller is active. Rate-limited server-side to one write per
+ * 30s, so a chatty client cannot turn this into polling.
+ */
+export async function touchLastSeen(): Promise<void> {
+  const sb = requireSupabase();
+  const { error } = await sb.rpc('touch_last_seen');
+  // A heartbeat failure is never worth surfacing to the student.
+  if (error) console.warn('[presence] heartbeat failed', error.message);
 }
 
 // ---------------------------------------------------------------------------

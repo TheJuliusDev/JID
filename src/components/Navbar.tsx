@@ -141,7 +141,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenCreate, onNavigate }) => {
       {/* Main bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-3">
         <NavLink
-          to="home"
+          to="marketplace"
           className="group flex items-center gap-3 shrink-0 flex-1 min-w-0"
           aria-label={`${BRAND_CONFIG.name} home`}
         >

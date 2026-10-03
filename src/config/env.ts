@@ -41,6 +41,21 @@ export const CLOUDINARY_UPLOAD_PRESET = readEnv('CLOUDINARY_UPLOAD_PRESET');
  */
 export const FORMSPREE_ENDPOINT = readEnv('FORMSPREE_ENDPOINT');
 
+/**
+ * Web Push VAPID **public** key. This is public by design — the matching private
+ * key lives only in the `notify-push` Edge Function's secrets.
+ *
+ * Push is optional: when this is missing the app still works, it just cannot
+ * deliver background notifications, so it is deliberately not part of
+ * `configStatus`. Generate a pair with:
+ *   npx web-push generate-vapid-keys
+ */
+export const VAPID_PUBLIC_KEY = readEnv('VAPID_PUBLIC_KEY');
+
+const isBase64Url = (value: string): boolean => /^[A-Za-z0-9_-]{20,}={0,2}$/.test(value);
+
+export const hasPushConfig = Boolean(VAPID_PUBLIC_KEY && isBase64Url(VAPID_PUBLIC_KEY));
+
 const isFormspreeEndpoint = (value: string): boolean =>
   /^https:\/\/formspree\.io\/f\/[A-Za-z0-9]+$/.test(value);
 

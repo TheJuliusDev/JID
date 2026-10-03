@@ -6,6 +6,7 @@ interface MarketplacePageProps {
   onOpenCreateListing: () => void;
   onSelectItem: (item: MarketplaceItem) => void;
   onOpenProfile: (username: string) => void;
+  onRequireAuth: () => void;
 }
 
 /**
@@ -17,4 +18,5 @@ export const MarketplacePage: React.FC<MarketplacePageProps> = ({
   onOpenCreateListing,
   onSelectItem,
   onOpenProfile,
-}) => <MarketplaceExplorer onOpenCreateListing={onOpenCreateListing} onSelectItem={onSelectItem} onOpenProfile={onOpenProfile} />;
+  onRequireAuth,
+}) => <MarketplaceExplorer onOpenCreateListing={onOpenCreateListing} onSelectItem={onSelectItem} onOpenProfile={onOpenProfile} onRequireAuth={onRequireAuth} />;

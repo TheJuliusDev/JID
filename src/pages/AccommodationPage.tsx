@@ -6,6 +6,7 @@ interface AccommodationPageProps {
   onOpenCreateListing: () => void;
   onSelectProperty: (property: PropertyListing) => void;
   onOpenProfile: (username: string) => void;
+  onRequireAuth: () => void;
 }
 
 /**
@@ -16,10 +17,12 @@ export const AccommodationPage: React.FC<AccommodationPageProps> = ({
   onOpenCreateListing,
   onSelectProperty,
   onOpenProfile,
+  onRequireAuth,
 }) => (
   <AccommodationExplorer
     onOpenCreateListing={onOpenCreateListing}
     onSelectProperty={onSelectProperty}
     onOpenProfile={onOpenProfile}
+    onRequireAuth={onRequireAuth}
   />
 );

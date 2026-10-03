@@ -9,6 +9,7 @@ import { MarketplaceItem, PropertyListing } from './types';
 import { configStatus } from './config/env';
 import { RouterProvider, useRouter } from './router/RouterProvider';
 import { isAdminView, isProtectedView } from './router/routes';
+import { setPendingSearch, SavedFilters } from './services/pendingSearch';
 
 // Shared
 import { ConfigError } from './components/common/ConfigError';
@@ -107,10 +108,10 @@ function AppContent() {
     };
   }, []);
 
-  // An unauthenticated visit to a protected surface bounces to Home + auth.
+  // An unauthenticated visit to a protected surface bounces home and opens auth.
   useEffect(() => {
     if (!isLoading && !user && isProtectedView(view)) {
-      navigate('home', { replace: true });
+      navigate('marketplace', { replace: true });
       setIsAuthOpen(true);
     }
   }, [isLoading, user, view, navigate]);
@@ -204,7 +205,7 @@ function AppContent() {
   // route renders it. `AdminGate` is the security boundary: it asks the database
   // whether this account is an administrator before anything else is rendered.
   if (isAdminView(view)) {
-    return <AdminGate onExit={() => navigate('home')} />;
+    return <AdminGate onExit={() => navigate('marketplace')} />;
   }
 
   const blockedByAuth = isProtectedView(view) && !isLoading && !user;
@@ -233,6 +234,7 @@ function AppContent() {
             onOpenCreateListing={openCreateOrAuth}
             onSelectItem={setActiveItemDetail}
             onOpenProfile={openProfile}
+            onRequireAuth={() => setIsAuthOpen(true)}
           />
         );
 
@@ -242,6 +244,7 @@ function AppContent() {
             onOpenCreateListing={openCreateOrAuth}
             onSelectProperty={setActivePropDetail}
             onOpenProfile={openProfile}
+            onRequireAuth={() => setIsAuthOpen(true)}
           />
         );
 
@@ -266,10 +269,10 @@ function AppContent() {
         return <CookiePolicyPage />;
 
       case 'login':
-        return <AuthPage mode="login" redirectTo="home" />;
+        return <AuthPage mode="login" redirectTo="marketplace" />;
 
       case 'signup':
-        return <AuthPage mode="signup" redirectTo="home" />;
+        return <AuthPage mode="signup" redirectTo="marketplace" />;
 
       case 'not-found':
         return <NotFoundPage />;
@@ -302,6 +305,10 @@ function AppContent() {
             onSelectItem={setActiveItemDetail}
             onSelectProperty={setActivePropDetail}
             onExploreMarketplace={() => navigate('marketplace')}
+            onRunSearch={(type: 'marketplace' | 'property', filters: SavedFilters) => {
+              setPendingSearch(type, filters);
+              navigate(type === 'marketplace' ? 'marketplace' : 'accommodation');
+            }}
           />
         ) : null;
 

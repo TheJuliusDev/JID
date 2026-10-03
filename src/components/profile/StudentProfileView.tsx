@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { listMarketplaceByUser, listPropertiesByUser } from '../../services/database';
 import { MarketplaceCard } from '../marketplace/MarketplaceCard';
 import { AvatarUploader } from './AvatarUploader';
+import MessagingPrivacySection from '../messages/MessagingPrivacySection';
 import { Toast } from '../Toast';
 import {
   MapPin,
@@ -477,6 +478,8 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ onSelect
               </button>
             </div>
           </form>
+
+          <MessagingPrivacySection />
 
           {/* Danger zone */}
           <div className="bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 rounded-3xl p-6 sm:p-8">

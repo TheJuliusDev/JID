@@ -1,6 +1,6 @@
 import React from 'react';
 import { useData } from '../../context/DataContext';
-import { Bell, Check, Zap, MessageSquare, Info, ShieldAlert } from 'lucide-react';
+import { Bell, Check, Zap, MessageSquare, Info, ShieldAlert, TrendingDown, BellRing } from 'lucide-react';
 
 interface NotificationsDropdownProps {
   isOpen: boolean;
@@ -17,7 +17,9 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
 
   if (!isOpen) return null;
 
-  const getIcon = (type: string) => {
+  const getIcon = (type: string, category?: string) => {
+    if (category === 'price_drop') return <TrendingDown className="w-4 h-4 text-emerald-500" />;
+    if (category === 'saved_search') return <BellRing className="w-4 h-4 text-amber-500" />;
     switch (type) {
       case 'boost': return <Zap className="w-4 h-4 text-amber-500 fill-current" />;
       case 'message': return <MessageSquare className="w-4 h-4 text-blue-500" />;
@@ -58,7 +60,7 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
               }`}
             >
               <div className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex-shrink-0">
-                {getIcon(notif.type)}
+                {getIcon(notif.type, notif.category)}
               </div>
               <div className="min-w-0 flex-1 space-y-0.5">
                 <p className="font-bold text-xs text-zinc-900 dark:text-zinc-100 truncate">

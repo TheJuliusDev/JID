@@ -136,6 +136,28 @@ export interface SavedItem {
   item?: MarketplaceItem | PropertyListing;
 }
 
+/**
+ * How a message renders. Rows written before the `kind` column existed are
+ * backfilled from their `jid://photo/` content prefix by migration 006, so
+ * `text` means a real text message here.
+ */
+export type MessageKind = 'text' | 'image' | 'voice';
+
+export interface ImageMessageMeta {
+  /** One or more absolute image URLs. */
+  urls: string[];
+}
+
+export interface VoiceMessageMeta {
+  url: string;
+  durationMs: number;
+  /**
+   * Normalised 0..1 amplitude peaks used to draw the waveform. Recorded once at
+   * capture time so playback never has to decode the audio to draw it.
+   */
+  peaks?: number[];
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -146,7 +168,35 @@ export interface Message {
   readAt?: string;
   /** Set when the sender soft-deletes the message (content is wiped). */
   deletedAt?: string;
+  kind: MessageKind;
+  /** Per-kind extras (image URLs, voice duration/waveform). */
+  imageMeta?: ImageMessageMeta;
+  voiceMeta?: VoiceMessageMeta;
+  /** The message this one replies to, if any. */
+  replyToId?: string;
+  /**
+   * The id the sending device generated before the row existed. Used to swap an
+   * optimistic bubble for the real row exactly once.
+   */
+  clientId?: string;
+  /** Resolved preview of the parent, for rendering the quoted block. */
+  replyTo?: MessageReplyPreview;
+  /** True when the signed-in student hid this message for themselves only. */
+  hiddenForMe?: boolean;
 }
+
+/** Compact snapshot of a replied-to message, embedded in the quote block. */
+export interface MessageReplyPreview {
+  id: string;
+  senderId: string;
+  kind: MessageKind;
+  /** Never the full body — quotes stay one or two lines. */
+  preview: string;
+  createdAt: string;
+}
+
+/** Local-only delivery state. `sending`/`failed` exist only on the sender's device. */
+export type MessageDeliveryState = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface Conversation {
   id: string;
@@ -158,6 +208,10 @@ export interface Conversation {
     department?: string;
     level?: string;
     hallOrArea?: string;
+    /** Throttled heartbeat written while the student was last active. */
+    lastSeenAt?: string;
+    /** False when that student has turned presence off in settings. */
+    presenceVisible?: boolean;
   };
   lastMessage?: Message;
   unreadCount: number;
@@ -169,9 +223,42 @@ export interface Conversation {
     image: string;
     type: 'marketplace' | 'property';
   };
+  /** Set while pinned; pinned chats sort above everything else. */
+  pinnedAt?: string;
+  /** Set while archived; archived chats are hidden from the main inbox. */
+  archivedAt?: string;
+  /** True when the signed-in student has blocked this participant. */
+  isBlocked?: boolean;
+}
+
+/** Categories offered by the in-chat reporting flow. */
+export type ChatReportReason =
+  | 'scam'
+  | 'harassment'
+  | 'spam'
+  | 'inappropriate'
+  | 'fake_listing'
+  | 'impersonation'
+  | 'other';
+
+export interface ChatReportReasonOption {
+  value: ChatReportReason;
+  label: string;
+  hint: string;
+}
+
+export interface BlockedUser {
+  id: string;
+  username?: string;
+  fullName: string;
+  avatarUrl?: string;
+  blockedAt: string;
 }
 
 export type NotificationType = 'message' | 'boost' | 'inquiry' | 'system' | 'report' | 'review';
+
+/** Sub-type for `system` notifications, used to pick an icon/label. */
+export type NotificationCategory = 'price_drop' | 'saved_search';
 
 export interface NotificationItem {
   id: string;
@@ -179,9 +266,23 @@ export interface NotificationItem {
   title: string;
   message: string;
   type: NotificationType;
+  /** Alert sub-type (price drop on a saved listing, new saved-search match). */
+  category?: NotificationCategory;
   link?: string;
   isRead: boolean;
   createdAt: string;
+}
+
+export interface SavedSearch {
+  id: string;
+  userId: string;
+  listingType: 'marketplace' | 'property';
+  label: string;
+  /** Persisted explorer filters (search, category, price range, toggles…). */
+  filters: Record<string, string | number | boolean>;
+  notify: boolean;
+  createdAt: string;
+  lastNotifiedAt?: string;
 }
 
 export type BoostStatus = 'active' | 'expired' | 'cancelled';

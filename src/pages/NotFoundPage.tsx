@@ -45,7 +45,7 @@ export const NotFoundPage: React.FC = () => {
 
           <div className="mt-8">
             <NavLink
-              to="home"
+              to="marketplace"
               className="group inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-7 py-3.5 rounded-2xl text-sm shadow-lg shadow-emerald-600/25 transition-all active:scale-[0.98]"
             >
               Back to home

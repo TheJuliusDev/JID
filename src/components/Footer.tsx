@@ -11,9 +11,9 @@ interface FooterProps {
 }
 
 const EXPLORE: Array<{ to: ViewType; label: string }> = [
-  { to: 'home', label: 'Home' },
   { to: 'marketplace', label: 'Marketplace' },
   { to: 'accommodation', label: 'Accommodation' },
+  { to: 'home', label: 'Home' },
   { to: 'vendors', label: 'Vendors' },
 ];
 

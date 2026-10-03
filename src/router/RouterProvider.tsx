@@ -46,7 +46,7 @@ export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // produces a real canonical URL instead of a literal `/u/:username`.
   useEffect(() => {
     const route = getRoute(match.view);
-    applyRouteMeta(match.view, match.path, route?.title);
+    applyRouteMeta(match.view, match.path, route);
   }, [match.view, match.path]);
 
   const navigate = useCallback<RouterValue['navigate']>((view, options = {}) => {

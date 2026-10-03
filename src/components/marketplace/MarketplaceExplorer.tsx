@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { MarketplaceItem } from '../../types';
 import { BRAND_CONFIG } from '../../config/brand';
-import { listMarketplace, MarketplaceQuery } from '../../services/database';
+import { searchMarketplace, MarketplaceQuery } from '../../services/database';
+import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
+import { takePendingSearch, canonicalFilters, SavedFilters } from '../../services/pendingSearch';
 import { MarketplaceCard } from './MarketplaceCard';
 import {
   Search,
@@ -20,16 +23,26 @@ import {
   ArrowUpDown,
   AlertTriangle,
   Loader2,
+  Zap,
+  BookmarkPlus,
+  Check,
 } from 'lucide-react';
 
 interface MarketplaceExplorerProps {
   onOpenCreateListing: () => void;
   onSelectItem: (item: MarketplaceItem) => void;
   onOpenProfile: (username: string) => void;
+  onRequireAuth: () => void;
 }
 
-type SortKey = 'boosted' | 'newest' | 'price-asc' | 'price-desc';
+type SortKey = 'relevance' | 'boosted' | 'newest' | 'price-asc' | 'price-desc';
 const PAGE_SIZE = 24;
+
+/** Parse a price input into a non-negative number, or undefined for "no bound". */
+const parsePrice = (value: string): number | undefined => {
+  const n = Number(value.replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+};
 
 const getCategoryIcon = (iconName: string) => {
   switch (iconName) {
@@ -60,16 +73,25 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
   onOpenCreateListing,
   onSelectItem,
   onOpenProfile,
+  onRequireAuth,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [selectedCondition, setSelectedCondition] = useState<string>('all');
-  const [selectedLocation, setSelectedLocation] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<SortKey>('boosted');
+  const { user } = useAuth();
+  const { savedSearches, saveSearch, deleteSavedSearch } = useData();
+  // Filters handed over from a saved search (see services/pendingSearch).
+  const [initial] = useState(() => takePendingSearch('marketplace'));
+  const [searchQuery, setSearchQuery] = useState(() => String(initial?.search ?? ''));
+  const [debouncedSearch, setDebouncedSearch] = useState(() => String(initial?.search ?? ''));
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => (initial?.category as string) ?? 'all');
+  const [selectedCondition, setSelectedCondition] = useState<string>(() => (initial?.condition as string) ?? 'all');
+  const [selectedLocation, setSelectedLocation] = useState<string>(() => (initial?.location as string) ?? 'all');
+  const [minPrice, setMinPrice] = useState(() => (initial?.minPrice != null ? String(initial.minPrice) : ''));
+  const [maxPrice, setMaxPrice] = useState(() => (initial?.maxPrice != null ? String(initial.maxPrice) : ''));
+  const [boostedOnly, setBoostedOnly] = useState(() => Boolean(initial?.boostedOnly));
+  const [sortBy, setSortBy] = useState<SortKey>('relevance');
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
   const [items, setItems] = useState<MarketplaceItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,22 +110,75 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
       category: selectedCategory !== 'all' ? selectedCategory : undefined,
       condition: selectedCondition !== 'all' ? selectedCondition : undefined,
       location: selectedLocation !== 'all' ? selectedLocation : undefined,
+      minPrice: parsePrice(minPrice),
+      maxPrice: parsePrice(maxPrice),
+      boostedOnly,
       sort: sortBy,
       limit: PAGE_SIZE,
       offset,
     }),
-    [debouncedSearch, selectedCategory, selectedCondition, selectedLocation, sortBy]
+    [debouncedSearch, selectedCategory, selectedCondition, selectedLocation, minPrice, maxPrice, boostedOnly, sortBy]
   );
+
+  // Save-search: the persisted filter set (excluding paging/sort) and whether
+  // the current view already matches a saved search.
+  const currentFilters = useMemo<SavedFilters>(() => {
+    const f: SavedFilters = {};
+    if (debouncedSearch) f.search = debouncedSearch;
+    if (selectedCategory !== 'all') f.category = selectedCategory;
+    if (selectedCondition !== 'all') f.condition = selectedCondition;
+    if (selectedLocation !== 'all') f.location = selectedLocation;
+    const mn = parsePrice(minPrice);
+    const mx = parsePrice(maxPrice);
+    if (mn !== undefined) f.minPrice = mn;
+    if (mx !== undefined) f.maxPrice = mx;
+    if (boostedOnly) f.boostedOnly = true;
+    return f;
+  }, [debouncedSearch, selectedCategory, selectedCondition, selectedLocation, minPrice, maxPrice, boostedOnly]);
+
+  const currentCanonical = canonicalFilters(currentFilters);
+  const savedMatch = savedSearches.find(
+    (s) => s.listingType === 'marketplace' && canonicalFilters(s.filters) === currentCanonical
+  );
+
+  const buildSearchLabel = (): string => {
+    const parts: string[] = [];
+    if (debouncedSearch) parts.push(`"${debouncedSearch}"`);
+    if (selectedCategory !== 'all')
+      parts.push(BRAND_CONFIG.categories.find((c) => c.id === selectedCategory)?.label ?? selectedCategory);
+    if (selectedLocation !== 'all') parts.push(selectedLocation);
+    if (selectedCondition !== 'all') parts.push(selectedCondition);
+    if (parsePrice(minPrice) !== undefined || parsePrice(maxPrice) !== undefined) parts.push('price filter');
+    if (boostedOnly) parts.push('featured');
+    return parts.length ? `Marketplace · ${parts.join(' · ')}` : 'All marketplace listings';
+  };
+
+  const handleSaveSearch = async () => {
+    if (!user) {
+      onRequireAuth();
+      return;
+    }
+    try {
+      if (savedMatch) {
+        await deleteSavedSearch(savedMatch.id);
+      } else {
+        await saveSearch({ listingType: 'marketplace', label: buildSearchLabel(), filters: currentFilters });
+      }
+    } catch (e) {
+      console.error('[marketplace] save search failed', e);
+    }
+  };
 
   // Reload the first page whenever the query changes.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    listMarketplace(buildQuery(0))
-      .then((rows) => {
+    searchMarketplace(buildQuery(0))
+      .then(({ items: rows, total: count }) => {
         if (cancelled) return;
         setItems(rows);
+        setTotal(count);
         setHasMore(rows.length === PAGE_SIZE);
       })
       .catch((e) => {
@@ -111,6 +186,7 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
         console.error('[marketplace] load failed', e);
         setError('We couldn’t load listings right now. Please check your connection and try again.');
         setItems([]);
+        setTotal(0);
         setHasMore(false);
       })
       .finally(() => {
@@ -124,7 +200,7 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
   const loadMore = async () => {
     setLoadingMore(true);
     try {
-      const rows = await listMarketplace(buildQuery(items.length));
+      const { items: rows } = await searchMarketplace(buildQuery(items.length));
       setItems((prev) => [...prev, ...rows]);
       setHasMore(rows.length === PAGE_SIZE);
     } catch (e) {
@@ -137,12 +213,18 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
   const activeFiltersCount =
     (selectedCategory !== 'all' ? 1 : 0) +
     (selectedCondition !== 'all' ? 1 : 0) +
-    (selectedLocation !== 'all' ? 1 : 0);
+    (selectedLocation !== 'all' ? 1 : 0) +
+    (parsePrice(minPrice) !== undefined ? 1 : 0) +
+    (parsePrice(maxPrice) !== undefined ? 1 : 0) +
+    (boostedOnly ? 1 : 0);
 
   const resetFilters = () => {
     setSelectedCategory('all');
     setSelectedCondition('all');
     setSelectedLocation('all');
+    setMinPrice('');
+    setMaxPrice('');
+    setBoostedOnly(false);
     setSearchQuery('');
   };
 
@@ -200,6 +282,7 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
                 onChange={(e) => setSortBy(e.target.value as SortKey)}
                 className="w-full appearance-none pl-4 pr-10 py-3.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-medium text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-emerald-600/50 cursor-pointer shadow-sm"
               >
+                <option value="relevance">Best Match</option>
                 <option value="boosted">Featured / Boosted First</option>
                 <option value="newest">Newest First</option>
                 <option value="price-asc">Price: Low to High</option>
@@ -223,6 +306,19 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
                   {activeFiltersCount}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={handleSaveSearch}
+              title={savedMatch ? 'Remove this saved search' : 'Save this search and get alerts'}
+              className={`flex items-center gap-2 px-4 py-3.5 rounded-2xl border text-sm font-medium transition-all ${
+                savedMatch
+                  ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+                  : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-400 dark:hover:border-zinc-600'
+              }`}
+            >
+              {savedMatch ? <Check className="w-4 h-4" /> : <BookmarkPlus className="w-4 h-4" />}
+              <span className="hidden sm:inline">{savedMatch ? 'Saved' : 'Save search'}</span>
             </button>
           </div>
         </div>
@@ -250,7 +346,7 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
 
         {/* Filters drawer */}
         {isFilterDrawerOpen && (
-          <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-3 gap-4 animate-fadeIn">
+          <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fadeIn">
             <div>
               <label className="block text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider mb-2">
                 Item Condition
@@ -290,7 +386,49 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
               </select>
             </div>
 
-            <div className="flex items-end">
+            <div>
+              <label className="block text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider mb-2">
+                Price Range ({BRAND_CONFIG.currency.symbol})
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={minPrice}
+                  onChange={(e) => setMinPrice(e.target.value)}
+                  placeholder="Min"
+                  aria-label="Minimum price"
+                  className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                />
+                <span className="text-zinc-400 text-xs">–</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={maxPrice}
+                  onChange={(e) => setMaxPrice(e.target.value)}
+                  placeholder="Max"
+                  aria-label="Maximum price"
+                  className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setBoostedOnly((v) => !v)}
+                aria-pressed={boostedOnly}
+                className={`inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-semibold border transition-colors ${
+                  boostedOnly
+                    ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+                    : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
+                }`}
+              >
+                <Zap className={`w-3.5 h-3.5 ${boostedOnly ? 'fill-current' : ''}`} />
+                Featured Only
+              </button>
               <button
                 onClick={resetFilters}
                 className="w-full py-2.5 px-4 border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-xl text-xs font-semibold transition-colors"
@@ -309,9 +447,11 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
             'Loading campus listings…'
           ) : (
             <>
-              Showing <span className="font-bold text-zinc-900 dark:text-zinc-100">{items.length}</span> campus listing{items.length === 1 ? '' : 's'}
+              Showing{' '}
+              <span className="font-bold text-zinc-900 dark:text-zinc-100">{items.length}</span> of{' '}
+              <span className="font-bold text-zinc-900 dark:text-zinc-100">{total}</span> campus listing
+              {total === 1 ? '' : 's'}
               {debouncedSearch && <span> for &ldquo;{debouncedSearch}&rdquo;</span>}
-              {hasMore && <span> (scroll for more)</span>}
             </>
           )}
         </div>

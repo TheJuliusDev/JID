@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { PropertyListing } from '../../types';
 import { BRAND_CONFIG } from '../../config/brand';
-import { listProperties, PropertyQuery } from '../../services/database';
+import { searchProperties, PropertyQuery } from '../../services/database';
+import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
+import { takePendingSearch, canonicalFilters, SavedFilters } from '../../services/pendingSearch';
 import { PropertyCard } from './PropertyCard';
 import {
   Search,
@@ -13,16 +16,27 @@ import {
   Building,
   AlertTriangle,
   Loader2,
+  ShieldCheck,
+  Zap,
+  BookmarkPlus,
+  Check,
 } from 'lucide-react';
 
 interface AccommodationExplorerProps {
   onOpenCreateListing: () => void;
   onSelectProperty: (property: PropertyListing) => void;
   onOpenProfile: (username: string) => void;
+  onRequireAuth: () => void;
 }
 
-type SortKey = 'boosted' | 'newest' | 'price-asc' | 'price-desc';
+type SortKey = 'relevance' | 'boosted' | 'newest' | 'price-asc' | 'price-desc';
 const PAGE_SIZE = 24;
+
+/** Parse a price input into a non-negative number, or undefined for "no bound". */
+const parsePrice = (value: string): number | undefined => {
+  const n = Number(value.replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+};
 
 const CardSkeleton: React.FC = () => (
   <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden animate-pulse">
@@ -39,16 +53,27 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
   onOpenCreateListing,
   onSelectProperty,
   onOpenProfile,
+  onRequireAuth,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [selectedArea, setSelectedArea] = useState<string>('all');
-  const [selectedRoomType, setSelectedRoomType] = useState<string>('all');
-  const [selectedAvailability, setSelectedAvailability] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<SortKey>('boosted');
+  const { user } = useAuth();
+  const { savedSearches, saveSearch, deleteSavedSearch } = useData();
+  const [initial] = useState(() => takePendingSearch('property'));
+  const [searchQuery, setSearchQuery] = useState(() => String(initial?.search ?? ''));
+  const [debouncedSearch, setDebouncedSearch] = useState(() => String(initial?.search ?? ''));
+  const [selectedArea, setSelectedArea] = useState<string>(() => (initial?.area as string) ?? 'all');
+  const [selectedRoomType, setSelectedRoomType] = useState<string>(() => (initial?.roomType as string) ?? 'all');
+  const [selectedAvailability, setSelectedAvailability] = useState<string>(
+    () => (initial?.availability as string) ?? 'all'
+  );
+  const [minPrice, setMinPrice] = useState(() => (initial?.minPrice != null ? String(initial.minPrice) : ''));
+  const [maxPrice, setMaxPrice] = useState(() => (initial?.maxPrice != null ? String(initial.maxPrice) : ''));
+  const [verifiedOnly, setVerifiedOnly] = useState(() => Boolean(initial?.verifiedOnly));
+  const [boostedOnly, setBoostedOnly] = useState(() => Boolean(initial?.boostedOnly));
+  const [sortBy, setSortBy] = useState<SortKey>('relevance');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   const [items, setItems] = useState<PropertyListing[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,21 +91,76 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
       area: selectedArea !== 'all' ? selectedArea : undefined,
       roomType: selectedRoomType !== 'all' ? selectedRoomType : undefined,
       availability: selectedAvailability !== 'all' ? selectedAvailability : undefined,
+      minPrice: parsePrice(minPrice),
+      maxPrice: parsePrice(maxPrice),
+      verifiedOnly,
+      boostedOnly,
       sort: sortBy,
       limit: PAGE_SIZE,
       offset,
     }),
-    [debouncedSearch, selectedArea, selectedRoomType, selectedAvailability, sortBy]
+    [debouncedSearch, selectedArea, selectedRoomType, selectedAvailability, minPrice, maxPrice, verifiedOnly, boostedOnly, sortBy]
   );
+
+  // Save-search: the persisted filter set (excluding paging/sort) and whether
+  // the current view already matches a saved search.
+  const currentFilters = useMemo<SavedFilters>(() => {
+    const f: SavedFilters = {};
+    if (debouncedSearch) f.search = debouncedSearch;
+    if (selectedArea !== 'all') f.area = selectedArea;
+    if (selectedRoomType !== 'all') f.roomType = selectedRoomType;
+    if (selectedAvailability !== 'all') f.availability = selectedAvailability;
+    const mn = parsePrice(minPrice);
+    const mx = parsePrice(maxPrice);
+    if (mn !== undefined) f.minPrice = mn;
+    if (mx !== undefined) f.maxPrice = mx;
+    if (verifiedOnly) f.verifiedOnly = true;
+    if (boostedOnly) f.boostedOnly = true;
+    return f;
+  }, [debouncedSearch, selectedArea, selectedRoomType, selectedAvailability, minPrice, maxPrice, verifiedOnly, boostedOnly]);
+
+  const currentCanonical = canonicalFilters(currentFilters);
+  const savedMatch = savedSearches.find(
+    (s) => s.listingType === 'property' && canonicalFilters(s.filters) === currentCanonical
+  );
+
+  const buildSearchLabel = (): string => {
+    const parts: string[] = [];
+    if (debouncedSearch) parts.push(`"${debouncedSearch}"`);
+    if (selectedArea !== 'all') parts.push(selectedArea);
+    if (selectedRoomType !== 'all') parts.push(selectedRoomType);
+    if (selectedAvailability !== 'all') parts.push(selectedAvailability);
+    if (parsePrice(minPrice) !== undefined || parsePrice(maxPrice) !== undefined) parts.push('rent filter');
+    if (verifiedOnly) parts.push('verified');
+    if (boostedOnly) parts.push('featured');
+    return parts.length ? `Accommodation · ${parts.join(' · ')}` : 'All accommodation listings';
+  };
+
+  const handleSaveSearch = async () => {
+    if (!user) {
+      onRequireAuth();
+      return;
+    }
+    try {
+      if (savedMatch) {
+        await deleteSavedSearch(savedMatch.id);
+      } else {
+        await saveSearch({ listingType: 'property', label: buildSearchLabel(), filters: currentFilters });
+      }
+    } catch (e) {
+      console.error('[accommodation] save search failed', e);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    listProperties(buildQuery(0))
-      .then((rows) => {
+    searchProperties(buildQuery(0))
+      .then(({ items: rows, total: count }) => {
         if (cancelled) return;
         setItems(rows);
+        setTotal(count);
         setHasMore(rows.length === PAGE_SIZE);
       })
       .catch((e) => {
@@ -88,6 +168,7 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
         console.error('[accommodation] load failed', e);
         setError('We couldn’t load lodges right now. Please check your connection and try again.');
         setItems([]);
+        setTotal(0);
         setHasMore(false);
       })
       .finally(() => {
@@ -101,7 +182,7 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
   const loadMore = async () => {
     setLoadingMore(true);
     try {
-      const rows = await listProperties(buildQuery(items.length));
+      const { items: rows } = await searchProperties(buildQuery(items.length));
       setItems((prev) => [...prev, ...rows]);
       setHasMore(rows.length === PAGE_SIZE);
     } catch (e) {
@@ -114,12 +195,20 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
   const activeFiltersCount =
     (selectedArea !== 'all' ? 1 : 0) +
     (selectedRoomType !== 'all' ? 1 : 0) +
-    (selectedAvailability !== 'all' ? 1 : 0);
+    (selectedAvailability !== 'all' ? 1 : 0) +
+    (parsePrice(minPrice) !== undefined ? 1 : 0) +
+    (parsePrice(maxPrice) !== undefined ? 1 : 0) +
+    (verifiedOnly ? 1 : 0) +
+    (boostedOnly ? 1 : 0);
 
   const resetFilters = () => {
     setSelectedArea('all');
     setSelectedRoomType('all');
     setSelectedAvailability('all');
+    setMinPrice('');
+    setMaxPrice('');
+    setVerifiedOnly(false);
+    setBoostedOnly(false);
     setSearchQuery('');
   };
 
@@ -177,6 +266,7 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
                 onChange={(e) => setSortBy(e.target.value as SortKey)}
                 className="w-full appearance-none pl-4 pr-10 py-3.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-sm font-medium text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-500/50 cursor-pointer shadow-sm"
               >
+                <option value="relevance">Best Match</option>
                 <option value="boosted">Featured Lodges First</option>
                 <option value="newest">Recently Listed</option>
                 <option value="price-asc">Rent: Low to High</option>
@@ -200,6 +290,19 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
                   {activeFiltersCount}
                 </span>
               )}
+            </button>
+
+            <button
+              onClick={handleSaveSearch}
+              title={savedMatch ? 'Remove this saved search' : 'Save this search and get alerts'}
+              className={`flex items-center gap-2 px-4 py-3.5 rounded-2xl border text-sm font-medium transition-all ${
+                savedMatch
+                  ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+                  : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-400 dark:hover:border-zinc-600'
+              }`}
+            >
+              {savedMatch ? <Check className="w-4 h-4" /> : <BookmarkPlus className="w-4 h-4" />}
+              <span className="hidden sm:inline">{savedMatch ? 'Saved' : 'Save search'}</span>
             </button>
           </div>
         </div>
@@ -227,7 +330,7 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
 
         {/* Filter drawer */}
         {isFilterOpen && (
-          <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-3 gap-4 animate-fadeIn">
+          <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fadeIn">
             <div>
               <label className="block text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider mb-2">
                 Room / Property Type
@@ -260,7 +363,64 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
               </select>
             </div>
 
-            <div className="flex items-end">
+            <div>
+              <label className="block text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider mb-2">
+                Rent Range ({BRAND_CONFIG.currency.symbol})
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={minPrice}
+                  onChange={(e) => setMinPrice(e.target.value)}
+                  placeholder="Min"
+                  aria-label="Minimum rent"
+                  className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                />
+                <span className="text-zinc-400 text-xs">–</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={maxPrice}
+                  onChange={(e) => setMaxPrice(e.target.value)}
+                  placeholder="Max"
+                  aria-label="Maximum rent"
+                  className="w-full px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-medium text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col justify-between gap-3">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVerifiedOnly((v) => !v)}
+                  aria-pressed={verifiedOnly}
+                  className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-semibold border transition-colors ${
+                    verifiedOnly
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                      : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Verified
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBoostedOnly((v) => !v)}
+                  aria-pressed={boostedOnly}
+                  className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-semibold border transition-colors ${
+                    boostedOnly
+                      ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+                      : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
+                  }`}
+                >
+                  <Zap className={`w-3.5 h-3.5 ${boostedOnly ? 'fill-current' : ''}`} />
+                  Featured
+                </button>
+              </div>
               <button
                 onClick={resetFilters}
                 className="w-full py-2.5 px-4 border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:text-amber-600 rounded-xl text-xs font-semibold transition-colors"
@@ -279,7 +439,10 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
             'Loading lodges & rooms…'
           ) : (
             <>
-              Showing <span className="font-bold text-zinc-900 dark:text-zinc-100">{items.length}</span> lodge{items.length === 1 ? '' : 's'} &amp; room{items.length === 1 ? '' : 's'}
+              Showing{' '}
+              <span className="font-bold text-zinc-900 dark:text-zinc-100">{items.length}</span> of{' '}
+              <span className="font-bold text-zinc-900 dark:text-zinc-100">{total}</span> lodge
+              {total === 1 ? '' : 's'} &amp; room{total === 1 ? '' : 's'}
               {selectedArea !== 'all' && <span> in {selectedArea}</span>}
             </>
           )}

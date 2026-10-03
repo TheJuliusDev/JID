@@ -13,6 +13,7 @@
  */
 
 import type { ViewType } from '../types';
+import type { RouteDef } from './routes';
 
 const SITE_NAME = 'JIDapp';
 const SITE_URL = 'https://jidapp.ng';
@@ -35,12 +36,13 @@ const INDEXABLE_VIEWS = new Set([
  * only needs to appear once, and stuffing it reads as spam.
  */
 const META: Partial<Record<ViewType, string>> = {
-  // Must stay in step with the static tag in index.html: this is the page that
-  // has to win the "jidapp" query, and it is the one Google indexes from the
-  // initial HTML before any JavaScript runs.
-  home: 'JIDapp is the verified student marketplace and accommodation platform for Obafemi Awolowo University (OAU), Ile-Ife. Buy and sell on campus, find lodges near OAU, chat directly with sellers. jidapp.ng',
+  // Must stay in step with the static tag in index.html: `/` is the marketplace,
+  // it is the page Google indexes from the initial HTML before any JavaScript
+  // runs, and it is the one that has to win the "jidapp" query.
   marketplace:
-    'Buy and sell used items, electronics, textbooks and hostel furniture on JIDapp. Student-to-student listings at Obafemi Awolowo University, Ile-Ife, with public seller profiles and reviews.',
+    'Buy and sell used items, electronics, textbooks and hostel furniture on JIDapp, the verified student marketplace and accommodation platform for Obafemi Awolowo University (OAU), Ile-Ife. Student-to-student listings with seller profiles, reviews and direct chat.',
+  home:
+    'What is JIDapp and how it works: buy and sell on campus, find student accommodation near OAU in Ile-Ife, chat directly with sellers and keep 100% of what you earn as an OAU student.',
   accommodation:
     'Find student accommodation near OAU on JIDapp. Rooms, bed spaces, self-contained flats and shared apartments around Ile-Ife, listed by students and verified landlords, with prices per year.',
   vendors:
@@ -66,21 +68,24 @@ const setMeta = (attr: 'name' | 'property', key: string, content: string) => {
  * Apply title, description, canonical and Open Graph tags for a route.
  * Safe to call on every navigation.
  *
- * @param view       the view being rendered
- * @param path       resolved pathname for this view, e.g. `/marketplace`
- * @param routeTitle the route's display title, from the route table
+ * @param view  the view being rendered
+ * @param path  resolved pathname for this view, e.g. `/marketplace`
+ * @param route the route definition, which owns the title and canonical path
  */
-export const applyRouteMeta = (view: ViewType, path: string, routeTitle?: string): void => {
+export const applyRouteMeta = (view: ViewType, path: string, route?: RouteDef): void => {
   if (typeof document === 'undefined') return;
 
-  const routePath = path === '' ? '/' : path;
-  const url = `${SITE_URL}${routePath}`;
+  // The marketplace answers to both `/` and `/marketplace`, so the canonical and
+  // og:url use the route's canonical path rather than whatever the visitor typed.
+  // That keeps one indexable URL per view instead of two competing copies.
+  const canonicalPath = route?.canonical ?? path;
+  const url = `${SITE_URL}${canonicalPath === '' ? '/' : canonicalPath}`;
   const isKnown = view !== 'not-found';
   const indexable = INDEXABLE_VIEWS.has(view);
 
   const title = isKnown
-    ? routeTitle
-      ? `${routeTitle} | ${SITE_NAME}`
+    ? route?.title
+      ? `${route.title} | ${SITE_NAME}`
       : SITE_NAME
     : `Page not found | ${SITE_NAME}`;
 
