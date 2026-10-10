@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { ArrowDown, ArrowUp, Loader2, Search, X } from 'lucide-react';
 import type { Message } from '../../types';
 import { searchMessages } from '../../services/database';
+import { useDismiss, useLinger } from '../ui';
 
 export interface SearchHit {
   messageId: string;
@@ -36,6 +38,20 @@ export const MessageSearchPanel: React.FC<MessageSearchPanelProps> = ({
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [cursor, setCursor] = useState(0);
+
+  // Escape closes from anywhere, including when focus has moved down to the
+  // results list. A tap in the thread behind does *not* dismiss it — the panel
+  // is inline, not modal, so it must not eat clicks meant for the conversation.
+  const [open, setOpen] = useState(true);
+  const visible = useLinger(open ? true : undefined);
+  useEffect(() => {
+    if (!open && visible === null) onClose();
+  }, [open, visible]);
+  const panelRef = useDismiss<HTMLDivElement>({
+    active: visible !== null,
+    onDismiss: () => setOpen(false),
+    outside: false,
+  });
 
   // Debounced: this fires an RPC per keystroke otherwise.
   useEffect(() => {
@@ -82,7 +98,16 @@ export const MessageSearchPanel: React.FC<MessageSearchPanelProps> = ({
   };
 
   return (
-    <div className="absolute inset-0 z-20 bg-white dark:bg-zinc-900 flex flex-col">
+    <AnimatePresence>
+      {visible && (
+    <motion.div
+      ref={panelRef}
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+      className="absolute inset-0 z-20 bg-white dark:bg-zinc-900 flex flex-col"
+    >
       <div className="px-3 py-2.5 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 flex-shrink-0">
         <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/40">
           <Search className="w-4 h-4 text-zinc-400 flex-shrink-0" />
@@ -93,7 +118,6 @@ export const MessageSearchPanel: React.FC<MessageSearchPanelProps> = ({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') step(e.shiftKey ? -1 : 1);
-              if (e.key === 'Escape') onClose();
             }}
             placeholder="Search this chat"
             aria-label="Search this conversation"
@@ -128,7 +152,7 @@ export const MessageSearchPanel: React.FC<MessageSearchPanelProps> = ({
 
         <button
           type="button"
-          onClick={onClose}
+          onClick={() => setOpen(false)}
           aria-label="Close search"
           className="p-1.5 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer flex-shrink-0"
         >
@@ -172,7 +196,9 @@ export const MessageSearchPanel: React.FC<MessageSearchPanelProps> = ({
           ))
         )}
       </div>
-    </div>
+    </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
 

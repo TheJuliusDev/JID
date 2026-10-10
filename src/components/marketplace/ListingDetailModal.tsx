@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { MarketplaceItem } from '../../types';
 import { BRAND_CONFIG } from '../../config/brand';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { incrementView } from '../../services/database';
+import { Modal, useLinger } from '../ui';
 import {
   X,
   MapPin,
@@ -14,6 +16,7 @@ import {
   MessageSquare,
   Phone,
   Clock,
+  Check,
   CheckCircle2,
   AlertTriangle,
   ExternalLink,
@@ -69,19 +72,35 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   const { isAuthenticated } = useAuth();
   const saved = isSaved('marketplace', item.id);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const [copied, setCopied] = useState(false);
+  const [shareStatus, setShareStatus] = useState<'copied' | 'failed' | null>(null);
+  const copied = shareStatus === 'copied';
 
   // Count a view once per open (skip the owner's own visits).
   useEffect(() => {
     if (!isOwner) incrementView('marketplace', item.id).catch(() => {});
   }, [item.id, isOwner]);
 
-  const handleShare = () => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const handleShare = async () => {
+    const url = window.location.href;
+
+    // Phones get the real share sheet, which puts WhatsApp — how students
+    // actually pass listings around — one tap away.
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: item.title, text: item.title, url });
+        return;
+      } catch {
+        // Dismissed, or the payload was rejected: fall through to the clipboard.
+      }
     }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareStatus('copied');
+    } catch {
+      setShareStatus('failed');
+    }
+    window.setTimeout(() => setShareStatus(null), 2400);
   };
 
   const phone = item.phoneOrWhatsapp?.replace(/[^0-9]/g, '') || '';
@@ -97,15 +116,24 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
     if (item.seller.username) onOpenProfile(item.seller.username);
   };
 
+  // Mounted only while an item is open, so dismissal animates out here before
+  // the parent drops us.
+  const [open, setOpen] = useState(true);
+  const visible = useLinger(open ? true : undefined);
+  useEffect(() => {
+    if (!open && visible === null) onClose();
+  }, [open, visible]);
+  const requestClose = () => setOpen(false);
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/70 backdrop-blur-sm overflow-y-auto animate-fadeIn"
-      onClick={onClose}
+    <Modal
+      open={visible !== null}
+      onClose={requestClose}
+      size="xl"
+      ariaLabel={item.title}
+      panelClassName="bg-white dark:bg-zinc-900"
+      scrimClassName="bg-black/70 backdrop-blur-sm"
     >
-      <div
-        className="relative w-full max-w-4xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl overflow-hidden my-8 max-h-[90vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
         {/* Header Bar */}
         <div className="sticky top-0 z-20 flex items-center justify-between px-6 py-4 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center gap-2">
@@ -123,10 +151,26 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={handleShare}
-              className="p-2 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
-              title="Share listing"
+              className={`p-2 rounded-full transition-colors ${
+                copied
+                  ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50'
+                  : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+              title={copied ? 'Link copied' : 'Share listing'}
+              aria-label={copied ? 'Link copied to clipboard' : 'Share listing'}
             >
-              <Share2 className="w-4 h-4" />
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={copied ? 'done' : 'idle'}
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.6, opacity: 0 }}
+                  transition={{ duration: 0.16 }}
+                  className="flex items-center"
+                >
+                  {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+                </motion.span>
+              </AnimatePresence>
             </button>
             {isAuthenticated && (
               <button
@@ -142,7 +186,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
               </button>
             )}
             <button
-              onClick={onClose}
+              onClick={requestClose}
               className="p-2 text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
             >
               <X className="w-5 h-5" />
@@ -152,9 +196,19 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
         {/* Scrollable Content Body */}
         <div className="overflow-y-auto p-6 space-y-6">
-          {copied && (
-            <div className="p-3 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 text-sm font-medium rounded-xl text-center">
-              Listing link copied to clipboard!
+          {shareStatus && (
+            <div
+              role="status"
+              aria-live="polite"
+              className={`p-3 text-sm font-medium rounded-xl text-center ${
+                shareStatus === 'copied'
+                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200'
+                  : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200'
+              }`}
+            >
+              {shareStatus === 'copied'
+                ? 'Listing link copied to clipboard!'
+                : 'Could not copy the link — long-press the address bar instead.'}
             </div>
           )}
 
@@ -374,7 +428,6 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react';
+import { useDismiss, useLinger } from '../ui';
 
 interface PhotoLightboxProps {
   urls: string[];
@@ -19,47 +20,52 @@ interface PhotoLightboxProps {
 export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ urls, startIndex, onClose }) => {
   const [index, setIndex] = useState(startIndex);
 
+  // Mounted by the chat only while a viewer is open, so closing runs locally:
+  // fade out, then let the parent drop us. Same pattern as the other overlays.
+  const [open, setOpen] = useState(true);
+  const visible = useLinger(open ? true : undefined);
+  useEffect(() => {
+    if (!open && visible === null) onClose();
+  }, [open, visible]);
+
+  const requestClose = () => setOpen(false);
+
   const go = useCallback(
     (delta: number) => setIndex((i) => (i + delta + urls.length) % urls.length),
     [urls.length]
   );
 
-  // Arrow keys navigate, Escape closes. Only bound while this is open, and the
-  // listener is removed on unmount so the chat's own shortcuts are unaffected.
+  // Arrow keys navigate. Escape and the background scroll lock come from the
+  // shared overlay layer, which knows this is the topmost surface.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
       if (e.key === 'ArrowRight') go(1);
       if (e.key === 'ArrowLeft') go(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [go, onClose]);
+  }, [go]);
 
-  // Lock the page behind the overlay so a scroll gesture does not move the thread.
-  useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, []);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDismiss({ active: visible !== null, onDismiss: requestClose, insideRef: rootRef, lockScroll: true });
 
   if (urls.length === 0) return null;
   const current = urls[Math.min(index, urls.length - 1)];
 
   return (
     <AnimatePresence>
-      <motion.div
-        className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Photo ${index + 1} of ${urls.length}`}
-      >
+      {visible && (
+        <motion.div
+          ref={rootRef}
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={requestClose}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Photo ${index + 1} of ${urls.length}`}
+        >
         <motion.img
           key={current}
           src={current}
@@ -74,7 +80,6 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ urls, startIndex, 
 
         <button
           type="button"
-          onClick={onClose}
           aria-label="Close photo viewer"
           className="absolute top-4 right-4 p-2.5 rounded-full bg-black/40 hover:bg-black/70 text-white cursor-pointer transition-colors"
         >
@@ -125,6 +130,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ urls, startIndex, 
           </>
         )}
       </motion.div>
+      )}
     </AnimatePresence>
   );
 };

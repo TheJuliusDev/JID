@@ -7,6 +7,7 @@ import { MarketplaceCard } from '../marketplace/MarketplaceCard';
 import { AvatarUploader } from './AvatarUploader';
 import MessagingPrivacySection from '../messages/MessagingPrivacySection';
 import { Toast } from '../Toast';
+import { ListingCardSkeleton, SkeletonGroup } from '../ui';
 import {
   MapPin,
   GraduationCap,
@@ -271,9 +272,14 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ onSelect
           </div>
 
           {loadingListings ? (
-            <div className="flex items-center justify-center py-16 text-zinc-400">
-              <Loader2 className="w-6 h-6 animate-spin" />
-            </div>
+            <SkeletonGroup
+              label="Loading listings"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+            >
+              {Array.from({ length: 3 }).map((_, i) => (
+                <ListingCardSkeleton key={i} />
+              ))}
+            </SkeletonGroup>
           ) : activeItems.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {activeItems.map((item) => (

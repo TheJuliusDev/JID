@@ -1,5 +1,4 @@
-import React, { useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useEffect, useState } from 'react';
 import {
   Copy,
   CornerUpLeft,
@@ -10,6 +9,7 @@ import {
   Ban,
   X,
 } from 'lucide-react';
+import { Modal, useLinger } from '../ui';
 
 export interface MessageAction {
   id: 'reply' | 'copy' | 'delete' | 'hide' | 'report' | 'block' | 'blockAndReport';
@@ -32,43 +32,32 @@ interface MessageActionSheetProps {
  * actions are what a student expects there.
  */
 export const MessageActionSheet: React.FC<MessageActionSheetProps> = ({ actions, onSelect, onClose }) => {
+  // The parent mounts us only while the menu is open, so we run our own close
+  // cycle: play the exit animation, then hand control back for the unmount.
+  const [open, setOpen] = useState(true);
+  const visible = useLinger(open ? true : undefined);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    if (!open && visible === null) onClose();
+  }, [open, visible]);
 
   if (actions.length === 0) return null;
 
-  return (
-    <AnimatePresence>
-      <motion.div
-        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Message options"
-      >
-        <div className="absolute inset-0 bg-zinc-950/50 backdrop-blur-sm" />
+  const requestClose = () => setOpen(false);
 
-        <motion.div
-          initial={{ y: 24, scale: 0.97, opacity: 0 }}
-          animate={{ y: 0, scale: 1, opacity: 1 }}
-          exit={{ y: 12, scale: 0.98, opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-          onClick={(e) => e.stopPropagation()}
-          className="relative w-full sm:max-w-xs bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800"
-        >
+  return (
+    <Modal
+      open={visible !== null}
+      onClose={requestClose}
+      variant="sheet"
+      size="xs"
+      ariaLabel="Message options"
+      panelClassName="bg-white dark:bg-zinc-900"
+    >
           <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
             <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Message</p>
             <button
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
               aria-label="Close"
               className="p-1 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
             >
@@ -93,9 +82,7 @@ export const MessageActionSheet: React.FC<MessageActionSheetProps> = ({ actions,
               </button>
             ))}
           </div>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+    </Modal>
   );
 };
 

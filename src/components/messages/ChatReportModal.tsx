@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Loader2, ShieldCheck, X } from 'lucide-react';
 import type { ChatReportReason } from '../../types';
 import { submitChatReport } from '../../services/database';
+import { Modal, useLinger } from '../ui';
 
 interface ChatReportModalProps {
   reportedUserId: string;
@@ -48,6 +48,15 @@ export const ChatReportModal: React.FC<ChatReportModalProps> = ({
   const [status, setStatus] = useState<'idle' | 'submitting' | 'done'>('idle');
   const [error, setError] = useState<string | null>(null);
 
+  // The parent mounts us only while a report is open, so dismissing has to
+  // animate out *before* we hand control back. `open` drives the modal and
+  // `onClose` runs once the exit transition has played.
+  const [open, setOpen] = useState(true);
+  const visible = useLinger(open ? true : undefined);
+  useEffect(() => {
+    if (!open && visible === null) onClose();
+  }, [open, visible]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('submitting');
@@ -69,28 +78,17 @@ export const ChatReportModal: React.FC<ChatReportModalProps> = ({
     }
   };
 
-  return (
-    <AnimatePresence>
-      <motion.div
-        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Report message"
-      >
-        <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-sm" />
+  const requestClose = () => setOpen(false);
 
-        <motion.div
-          initial={{ y: 24, scale: 0.97, opacity: 0 }}
-          animate={{ y: 0, scale: 1, opacity: 1 }}
-          exit={{ y: 12, scale: 0.98, opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-          onClick={(e) => e.stopPropagation()}
-          className="relative w-full sm:max-w-md bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 max-h-[90vh] overflow-y-auto"
-        >
+  return (
+    <Modal
+      open={visible !== null}
+      onClose={requestClose}
+      variant="sheet"
+      size="sm"
+      ariaLabel="Report message"
+      panelClassName="bg-white dark:bg-zinc-900"
+    >
           <div className="flex items-start justify-between gap-3 p-5 border-b border-zinc-100 dark:border-zinc-800">
             <div>
               <h3 className="font-bold text-zinc-900 dark:text-white font-display flex items-center gap-2">
@@ -103,7 +101,7 @@ export const ChatReportModal: React.FC<ChatReportModalProps> = ({
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
               aria-label="Close"
               className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer flex-shrink-0"
             >
@@ -120,7 +118,7 @@ export const ChatReportModal: React.FC<ChatReportModalProps> = ({
                 {alsoBlock ? ' This student has been blocked.' : ''}
               </p>
               <button
-                onClick={onClose}
+                onClick={requestClose}
                 className="mt-4 px-5 py-2 bg-zinc-950 dark:bg-white text-white dark:text-zinc-900 text-xs font-bold rounded-xl cursor-pointer"
               >
                 Done
@@ -176,7 +174,7 @@ export const ChatReportModal: React.FC<ChatReportModalProps> = ({
               <div className="flex justify-end gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={requestClose}
                   className="px-4 py-2.5 text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer transition-colors"
                 >
                   Cancel
@@ -192,8 +190,6 @@ export const ChatReportModal: React.FC<ChatReportModalProps> = ({
               </div>
             </form>
           )}
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+    </Modal>
   );
 };

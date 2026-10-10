@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -14,6 +14,7 @@ import { setPendingSearch, SavedFilters } from './services/pendingSearch';
 // Shared
 import { ConfigError } from './components/common/ConfigError';
 import { LoadingScreen } from './components/common/LoadingScreen';
+import { ListRowSkeleton } from './components/ui';
 import { PageTransition } from './components/common/PageTransition';
 
 // Chrome
@@ -37,10 +38,22 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { StudentDashboard } from './components/dashboard/StudentDashboard';
 import { MyListingsView } from './components/listings/MyListingsView';
 import { SavedView } from './components/saved/SavedView';
-import { MessagingView } from './components/messages/MessagingView';
 import { StudentProfileView } from './components/profile/StudentProfileView';
 import { PublicProfileView } from './components/profile/PublicProfileView';
-import { AdminGate } from './components/admin/AdminGate';
+
+// Messaging pulls in the realtime client, the composer and every bubble variant,
+// which is dead weight for anyone browsing the marketplace. It is fetched the
+// first time someone opens a chat.
+const MessagingView = lazy(() =>
+  import('./components/messages/MessagingView').then((m) => ({ default: m.MessagingView }))
+);
+
+// The admin console is a sizeable chunk of UI that almost every visitor will
+// never open, so it is fetched only when an `/admin/*` route is actually
+// rendered. Everyone else never downloads it.
+const AdminGate = lazy(() =>
+  import('./components/admin/AdminGate').then((m) => ({ default: m.AdminGate }))
+);
 
 // Modals
 import { AuthModal } from './components/auth/AuthModal';
@@ -205,7 +218,11 @@ function AppContent() {
   // route renders it. `AdminGate` is the security boundary: it asks the database
   // whether this account is an administrator before anything else is rendered.
   if (isAdminView(view)) {
-    return <AdminGate onExit={() => navigate('marketplace')} />;
+    return (
+      <Suspense fallback={<LoadingScreen label="Checking administrator access" />}>
+        <AdminGate onExit={() => navigate('marketplace')} />
+      </Suspense>
+    );
   }
 
   const blockedByAuth = isProtectedView(view) && !isLoading && !user;
@@ -314,11 +331,13 @@ function AppContent() {
 
       case 'messages':
         return user ? (
-          <MessagingView
-            onOpenProfile={openProfile}
-            onBack={() => navigate('dashboard')}
-            onExploreMarketplace={() => navigate('marketplace')}
-          />
+          <Suspense fallback={<MessagesFallback />}>
+            <MessagingView
+              onOpenProfile={openProfile}
+              onBack={() => navigate('dashboard')}
+              onExploreMarketplace={() => navigate('marketplace')}
+            />
+          </Suspense>
         ) : null;
 
       case 'profile':
@@ -515,6 +534,36 @@ function RoutedApp() {
     </RouterProvider>
   );
 }
+
+/**
+ * Placeholder for the chat while its chunk downloads. Shaped like the real
+ * layout — sidebar plus a thread — so the transition to the loaded view is a
+ * swap of content rather than a jump.
+ */
+const MessagesFallback: React.FC = () => (
+  <div className="flex-1 flex min-h-0">
+    <div className="hidden md:flex w-full md:w-80 lg:w-96 flex-shrink-0 flex-col gap-3 p-3 border-r border-zinc-200 dark:border-zinc-800">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <ListRowSkeleton key={i} />
+      ))}
+    </div>
+    <div className="flex-1 flex flex-col">
+      <div className="h-16 flex-shrink-0 border-b border-zinc-200 dark:border-zinc-800" />
+      <div className="flex-1 flex flex-col justify-end gap-3 p-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className={`flex ${i % 2 === 0 ? 'justify-end' : 'justify-start'}`}>
+            <div
+              className={`h-10 rounded-2xl jid-skeleton ${
+                i % 2 === 0 ? 'w-48 rounded-br-md' : 'w-56 rounded-bl-md'
+              }`}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="h-20 flex-shrink-0 border-t border-zinc-200 dark:border-zinc-800" />
+    </div>
+  </div>
+);
 
 export default function App() {
   if (!configStatus.ok) {

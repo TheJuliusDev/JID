@@ -1,0 +1,74 @@
+{
+  "expo": {
+    "name": "JID",
+    "slug": "jid-mobile",
+    "scheme": "jid",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ng.jidapp.mobile",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "JID needs access to your photos so you can send pictures in a conversation.",
+        "NSCameraUsageDescription": "JID needs the camera so you can take a photo to send in a conversation.",
+        "NSMicrophoneUsageDescription": "JID needs the microphone so you can record a voice message."
+      }
+    },
+    "android": {
+      "package": "ng.jidapp.mobile",
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#0F7358",
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/adaptive-icon.png"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "extra": {
+      "eas": {
+        "projectId": ""
+      },
+      "router": {}
+    },
+    "plugins": [
+      "expo-router",
+      "expo-image",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#FBFAF8",
+          "dark": {
+            "backgroundColor": "#0E0D0C"
+          }
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      "expo-audio",
+      [
+        "expo-notifications",
+        {
+          "color": "#0F7358",
+          "defaultChannel": "messages"
+        }
+      ],
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}

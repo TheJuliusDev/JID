@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { MarketplaceItem, PropertyListing } from '../../types';
 import { BRAND_CONFIG } from '../../config/brand';
 import { useData } from '../../context/DataContext';
 import { X, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { Modal, useLinger } from '../ui';
 
 /**
  * What is being reported. App builds a listing target from a detail modal
@@ -24,6 +25,15 @@ export const ReportModal: React.FC<ReportModalProps> = ({ target, onClose }) => 
   const [details, setDetails] = useState('');
   const [status, setStatus] = useState<'idle' | 'submitting' | 'done'>('idle');
   const [error, setError] = useState<string | null>(null);
+
+  // Mounted only while a report is open, so closing animates here first and
+  // `onClose` fires once the shell has left the screen.
+  const [open, setOpen] = useState(true);
+  const visible = useLinger(open ? true : undefined);
+  useEffect(() => {
+    if (!open && visible === null) onClose();
+  }, [open, visible]);
+  const requestClose = () => setOpen(false);
 
   const targetTitle =
     target.kind === 'user' ? `@${target.user.username || target.user.fullName}` : target.item.title;
@@ -59,14 +69,14 @@ export const ReportModal: React.FC<ReportModalProps> = ({ target, onClose }) => 
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm overflow-y-auto animate-fadeIn"
-      onClick={onClose}
+    <Modal
+      open={visible !== null}
+      onClose={requestClose}
+      size="sm"
+      ariaLabel="Report to moderators"
+      panelClassName="bg-white dark:bg-zinc-900"
+      scrimClassName="bg-black/75 backdrop-blur-sm"
     >
-      <div
-        className="relative w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl p-6 space-y-6"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-4">
           <div className="flex items-center gap-2 text-rose-600">
             <AlertTriangle className="w-5 h-5" />
@@ -75,7 +85,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ target, onClose }) => 
             </h3>
           </div>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-white rounded-full"
             aria-label="Close"
           >
@@ -98,7 +108,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ target, onClose }) => 
               </p>
             </div>
             <button
-              onClick={onClose}
+              onClick={requestClose}
               className="px-6 py-2.5 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 font-bold text-xs rounded-xl shadow cursor-pointer"
             >
               Close
@@ -151,7 +161,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ target, onClose }) => 
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={requestClose}
                 className="px-4 py-2.5 text-xs font-semibold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"
               >
                 Cancel
@@ -167,7 +177,6 @@ export const ReportModal: React.FC<ReportModalProps> = ({ target, onClose }) => 
             </div>
           </form>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 };

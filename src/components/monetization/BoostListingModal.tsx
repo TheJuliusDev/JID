@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { MarketplaceItem, PropertyListing } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { BRAND_CONFIG } from '../../config/brand';
@@ -8,6 +8,7 @@ import {
   watchAdsForBoost,
 } from '../../services/adService';
 import { createBoost } from '../../services/database';
+import { Modal, useLinger } from '../ui';
 import {
   X,
   Zap,
@@ -37,6 +38,22 @@ export const BoostListingModal: React.FC<BoostListingModalProps> = ({ listing, o
   const [stage, setStage] = useState<Stage>('intro');
   const [watched, setWatched] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // The rewarded-ad handshake must not be interrupted: once the ads are running
+  // (or the boost is being written) the overlay deliberately stops responding to
+  // Escape and taps outside, the same rule the click handler used to enforce.
+  const busy = stage === 'watching' || stage === 'saving';
+
+  // Mounted only while a boost is open, so dismissal animates before unmounting.
+  const [open, setOpen] = useState(true);
+  const visible = useLinger(open ? true : undefined);
+  useEffect(() => {
+    if (!open && visible === null) onClose();
+  }, [open, visible]);
+  const requestClose = () => {
+    if (busy) return;
+    setOpen(false);
+  };
 
   const runBoost = useCallback(async () => {
     if (!user) {
@@ -68,14 +85,14 @@ export const BoostListingModal: React.FC<BoostListingModalProps> = ({ listing, o
   const progressPct = totalRequired > 0 ? Math.round((watched / totalRequired) * 100) : 0;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto animate-fadeIn"
-      onClick={stage === 'watching' || stage === 'saving' ? undefined : onClose}
+    <Modal
+      open={visible !== null}
+      onClose={requestClose}
+      size="md"
+      ariaLabel="Boost this listing"
+      panelClassName="bg-white dark:bg-zinc-900"
+      scrimClassName="bg-black/80 backdrop-blur-md"
     >
-      <div
-        className="relative w-full max-w-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl overflow-hidden my-8 flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center gap-2">
@@ -88,7 +105,7 @@ export const BoostListingModal: React.FC<BoostListingModalProps> = ({ listing, o
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             disabled={stage === 'watching' || stage === 'saving'}
             className="p-2 text-zinc-400 hover:text-zinc-700 dark:hover:text-white rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Close"
@@ -136,7 +153,7 @@ export const BoostListingModal: React.FC<BoostListingModalProps> = ({ listing, o
                 </p>
               </div>
               <button
-                onClick={onClose}
+                onClick={requestClose}
                 className="px-6 py-2.5 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 font-bold text-xs rounded-xl shadow cursor-pointer"
               >
                 Close
@@ -212,7 +229,7 @@ export const BoostListingModal: React.FC<BoostListingModalProps> = ({ listing, o
               </div>
               <div className="flex justify-center gap-2">
                 <button
-                  onClick={onClose}
+                  onClick={requestClose}
                   className="px-4 py-2.5 text-xs font-semibold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"
                 >
                   Cancel
@@ -243,7 +260,7 @@ export const BoostListingModal: React.FC<BoostListingModalProps> = ({ listing, o
               </div>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={requestClose}
                 className="w-full py-3.5 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 font-bold rounded-2xl text-sm shadow transition-all cursor-pointer"
               >
                 Done
@@ -251,7 +268,6 @@ export const BoostListingModal: React.FC<BoostListingModalProps> = ({ listing, o
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

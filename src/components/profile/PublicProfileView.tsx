@@ -8,13 +8,13 @@ import {
 } from '../../services/database';
 import { useAuth } from '../../context/AuthContext';
 import { StarRating } from '../common/StarRating';
+import { SkeletonGroup, SkeletonBlock, SkeletonCircle, SkeletonText } from '../ui';
 import { VendorReviews } from '../reviews/VendorReviews';
 import {
   ArrowLeft,
   MapPin,
   GraduationCap,
   MessageSquare,
-  Loader2,
   UserX,
   ShoppingBag,
   Home,
@@ -111,10 +111,33 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
 
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-zinc-400">
-        <Loader2 className="w-7 h-7 animate-spin text-emerald-600" />
-        <p className="text-sm">Loading profile…</p>
-      </div>
+      <SkeletonGroup label="Loading profile" className="min-h-[60vh] space-y-6">
+        {/* Identity card, matching the real header's shape and height. */}
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+            <SkeletonCircle className="w-24 h-24 flex-shrink-0" />
+            <div className="flex-1 min-w-0 space-y-3">
+              <SkeletonBlock className="h-7 w-1/2" />
+              <SkeletonBlock className="h-4 w-1/3" />
+              <SkeletonBlock className="h-3 w-2/3" />
+            </div>
+          </div>
+        </div>
+        {/* Bio + stats */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 space-y-3">
+            <SkeletonText lines={5} />
+          </div>
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 space-y-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between gap-3">
+                <SkeletonBlock className="h-3 w-24" />
+                <SkeletonBlock className="h-4 w-10" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </SkeletonGroup>
     );
   }
 

@@ -148,6 +148,225 @@ html.dark .modern-grid-pattern {
   }
 }
 
+/* ==========================================================================
+   JID design system — motion, glass, focus, feedback
+   --------------------------------------------------------------------------
+   Every animation, translucent surface and focus ring in the app comes from
+   here, so timing and depth stay identical across pages. Components compose
+   these; they do not invent their own durations or blur radii.
+   ========================================================================== */
+
+@layer base {
+  :root {
+    /* Motion — short enough to feel instant, long enough to read as movement. */
+    --jid-dur-instant: 120ms;
+    --jid-dur-fast: 160ms;
+    --jid-dur: 220ms;
+    --jid-dur-slow: 320ms;
+
+    /* Easing — a single expressive curve plus a symmetric exit. */
+    --jid-ease-out: cubic-bezier(0.21, 1, 0.36, 1);
+    --jid-ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --jid-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    /* Elevation — warm-tinted so shadows sit in the same family as the sand
+       neutrals rather than reading as generic grey. */
+    --jid-shadow-sm: 0 1px 2px rgba(26, 26, 23, 0.06), 0 1px 3px rgba(26, 26, 23, 0.04);
+    --jid-shadow-md: 0 4px 12px -2px rgba(26, 26, 23, 0.08), 0 2px 6px -2px rgba(26, 26, 23, 0.05);
+    --jid-shadow-lg: 0 12px 32px -8px rgba(26, 26, 23, 0.14), 0 4px 12px -4px rgba(26, 26, 23, 0.07);
+    --jid-shadow-xl: 0 24px 56px -12px rgba(26, 26, 23, 0.2), 0 8px 20px -8px rgba(26, 26, 23, 0.1);
+  }
+
+  /* One visible focus treatment everywhere, keyboard-only so it never appears
+     under a mouse click. */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid #0F7358; /* emerald-600 */
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
+  html.dark :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline-color: #38AC88; /* emerald-400 */
+  }
+
+  /* Removes the grey flash iOS/Android paints on tappable elements. */
+  :where(button, a, [role='button'], label, summary) {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Reserve the scrollbar gutter so locking body scroll cannot shift the
+     layout sideways on desktop — a modal must never nudge the page. */
+  html {
+    scrollbar-gutter: stable;
+  }
+}
+
+/* ── Glass surfaces ────────────────────────────────────────────────────────
+   Reserved for things that genuinely float above content: the sticky header,
+   the mobile tab bar, modals, sheets, dropdowns, filter panels and floating
+   action controls. Listing content stays on solid surfaces so text contrast
+   never depends on what happens to be behind it.
+   ------------------------------------------------------------------------- */
+
+/* Blur is kept small on purpose: large radii are expensive to composite on
+   mid-range phones and start to smear when a panel scrolls. */
+.jid-glass {
+  background-color: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(26, 26, 23, 0.07);
+  box-shadow: var(--jid-shadow-md);
+}
+html.dark .jid-glass {
+  background-color: rgba(20, 19, 17, 0.72);
+  border-color: rgba(245, 244, 240, 0.09);
+}
+
+/* The heavier variant for panels that sit on top of busy imagery. */
+.jid-glass-strong {
+  background-color: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(20px) saturate(190%);
+  -webkit-backdrop-filter: blur(20px) saturate(190%);
+  border: 1px solid rgba(26, 26, 23, 0.08);
+  box-shadow: var(--jid-shadow-xl);
+}
+html.dark .jid-glass-strong {
+  background-color: rgba(20, 19, 17, 0.88);
+  border-color: rgba(245, 244, 240, 0.11);
+}
+
+/* The hairline highlight that makes a translucent edge read as glass rather
+   than as a flat translucent box. */
+.jid-glass-edge {
+  position: relative;
+}
+.jid-glass-edge::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.7),
+    rgba(255, 255, 255, 0) 40%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+html.dark .jid-glass-edge::before {
+  background: linear-gradient(
+    to bottom,
+    rgba(245, 244, 240, 0.14),
+    rgba(245, 244, 240, 0) 40%
+  );
+}
+
+/* ── Feedback ───────────────────────────────────────────────────────────── */
+
+/* Skeleton shimmer. Transform-based so it stays on the compositor and never
+   triggers layout while a page of results loads. */
+@keyframes jid-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+.jid-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: #E9E7E2; /* zinc-200 */
+}
+html.dark .jid-skeleton {
+  background-color: #232220; /* charcoal-700 */
+}
+.jid-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.55) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: jid-shimmer 1.6s var(--jid-ease-out) infinite;
+}
+html.dark .jid-skeleton::after {
+  background: linear-gradient(
+    90deg,
+    rgba(245, 244, 240, 0) 0%,
+    rgba(245, 244, 240, 0.07) 50%,
+    rgba(245, 244, 240, 0) 100%
+  );
+}
+
+/* A single pulse for status dots (presence, "live"). */
+@keyframes jid-pulse-ring {
+  0% { transform: scale(1); opacity: 0.7; }
+  70% { transform: scale(2.2); opacity: 0; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.jid-presence-pulse {
+  animation: jid-pulse-ring 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ── Utilities ─────────────────────────────────────────────────────────── */
+
+/* Applied to <html> by the scroll-lock primitive. Also freezes iOS rubber-band
+   scrolling, which `overflow: hidden` alone does not stop on Safari. */
+.jid-scroll-locked {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+/* Horizontal rails (category pills, gallery thumbnails, filter chips) should
+   scroll without showing a chunky track inside the page. */
+.jid-scroll-x {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+.jid-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+/* Respect the OS setting globally, not just on the handful of components that
+   opted in. Motion is decoration here — the app is fully usable without it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .jid-skeleton::after {
+    animation: none;
+    background: none;
+  }
+  /* Backdrop blur is the single most expensive thing on this page; drop it
+     entirely rather than just shortening its transition. */
+  .jid-glass,
+  .jid-glass-strong {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .jid-glass,
+  .jid-glass-strong {
+    background-color: #FBFAF8;
+  }
+  html.dark .jid-glass,
+  html.dark .jid-glass-strong {
+    background-color: #151412;
+  }
+}
+
 /* Smooth micro-glow — emerald brand halo (legacy class name kept for compat) */
 .orange-glow,
 .emerald-glow,

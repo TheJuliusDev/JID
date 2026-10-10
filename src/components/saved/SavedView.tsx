@@ -4,7 +4,8 @@ import { useData } from '../../context/DataContext';
 import { getMarketplace, getProperty } from '../../services/database';
 import { MarketplaceCard } from '../marketplace/MarketplaceCard';
 import { PropertyCard } from '../accommodation/PropertyCard';
-import { Heart, Loader2, BellRing, Bell, BellOff, Trash2, ArrowRight } from 'lucide-react';
+import { ListingCardSkeleton, SkeletonGroup } from '../ui';
+import { Heart, BellRing, Bell, BellOff, Trash2, ArrowRight } from 'lucide-react';
 
 interface SavedViewProps {
   onSelectItem: (item: MarketplaceItem) => void;
@@ -155,9 +156,14 @@ export const SavedView: React.FC<SavedViewProps> = ({
 
       {/* Grid */}
       {loading ? (
-        <div className="flex items-center justify-center py-24 text-zinc-400">
-          <Loader2 className="w-7 h-7 animate-spin" />
-        </div>
+        <SkeletonGroup
+          label="Loading your saved items"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+        >
+          {Array.from({ length: 4 }).map((_, i) => (
+            <ListingCardSkeleton key={i} />
+          ))}
+        </SkeletonGroup>
       ) : savedItems.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {savedItems.map((entry) => (

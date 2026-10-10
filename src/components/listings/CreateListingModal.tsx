@@ -12,6 +12,7 @@ import {
   NewPropertyInput,
 } from '../../services/database';
 import { ViewType } from '../../types';
+import { Modal } from '../ui';
 import {
   X,
   Upload,
@@ -347,16 +348,18 @@ export const CreateListingModal: React.FC<CreateListingModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
   const priceLabel = listingType === 'marketplace' ? 'Price (₦)' : 'Rent per Year (₦)';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/75 backdrop-blur-sm overflow-y-auto animate-fadeIn">
-      <div
-        className="relative w-full max-w-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl overflow-hidden my-8 max-h-[92vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      size="lg"
+      scrollBody={false}
+      ariaLabel={isEdit ? 'Edit listing' : 'Create a listing'}
+      panelClassName="bg-white dark:bg-zinc-900"
+      scrimClassName="bg-black/75 backdrop-blur-sm"
+    >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 flex-shrink-0">
           <div>
@@ -1005,7 +1008,6 @@ export const CreateListingModal: React.FC<CreateListingModalProps> = ({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

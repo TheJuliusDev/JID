@@ -32,6 +32,7 @@ import { MessageActionSheet, buildMessageActions, type MessageAction } from './M
 import { MessageSearchPanel } from './MessageSearchPanel';
 import { PhotoLightbox } from './PhotoLightbox';
 import { ChatReportModal } from './ChatReportModal';
+import { SkeletonGroup } from '../ui';
 
 interface MessagingViewProps {
   onOpenProfile?: (username?: string) => void;
@@ -391,7 +392,11 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
 
       try {
         const sent = await sendMessage(activeConversation.id, user.id, input, clientId);
-        setMessages((prev) => prev.map((m) => (m.id === clientId ? sent : m)));
+        // The echo normally carries the quote preview as well. Keep the
+        // optimistic one when it does not, so a reply never loses its quote
+        // because the server-side join could not be resolved.
+        const confirmed = sent.replyTo || !optimistic.replyTo ? sent : { ...sent, replyTo: optimistic.replyTo };
+        setMessages((prev) => prev.map((m) => (m.id === clientId ? confirmed : m)));
         setPending((prev) => {
           const next = { ...prev };
           delete next[clientId];
@@ -632,9 +637,20 @@ export const MessagingView: React.FC<MessagingViewProps> = ({
                 </div>
 
                 {loadingMessages ? (
-                  <div className="flex items-center justify-center py-10 text-zinc-400">
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                  </div>
+                  <SkeletonGroup label="Loading messages" className="space-y-3 py-2">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <div
+                        key={i}
+                        className={`flex ${i % 3 === 0 ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`h-10 rounded-2xl jid-skeleton ${
+                            i % 3 === 0 ? 'w-44 rounded-br-md' : 'w-56 rounded-bl-md'
+                          }`}
+                        />
+                      </div>
+                    ))}
+                  </SkeletonGroup>
                 ) : messages.length === 0 ? (
                   <div className="text-center py-10 text-sm text-zinc-400">
                     No messages yet. Say hello to start the conversation.

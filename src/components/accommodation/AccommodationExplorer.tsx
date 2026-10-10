@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { PropertyListing } from '../../types';
 import { BRAND_CONFIG } from '../../config/brand';
 import { searchProperties, PropertyQuery } from '../../services/database';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { takePendingSearch, canonicalFilters, SavedFilters } from '../../services/pendingSearch';
+import { useDismiss, ListingCardSkeleton, SkeletonGroup } from '../ui';
 import { PropertyCard } from './PropertyCard';
 import {
   Search,
@@ -38,17 +40,6 @@ const parsePrice = (value: string): number | undefined => {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 };
 
-const CardSkeleton: React.FC = () => (
-  <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden animate-pulse">
-    <div className="aspect-[16/10] w-full bg-zinc-200 dark:bg-zinc-800" />
-    <div className="p-5 space-y-3">
-      <div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-1/3" />
-      <div className="h-5 bg-zinc-200 dark:bg-zinc-800 rounded w-3/4" />
-      <div className="h-8 bg-zinc-100 dark:bg-zinc-800/60 rounded" />
-    </div>
-  </div>
-);
-
 export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
   onOpenCreateListing,
   onSelectProperty,
@@ -71,6 +62,24 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
   const [boostedOnly, setBoostedOnly] = useState(() => Boolean(initial?.boostedOnly));
   const [sortBy, setSortBy] = useState<SortKey>('relevance');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+
+  // Mirrors the marketplace accordion: Escape closes it, a tap out in the results
+  // does not, and the panel lingers just long enough to collapse.
+  const reduceMotion = useReducedMotion();
+  const [filtersVisible, setFiltersVisible] = useState(false);
+  useEffect(() => {
+    if (isFilterOpen) setFiltersVisible(true);
+    else if (reduceMotion) setFiltersVisible(false);
+    else {
+      const timer = window.setTimeout(() => setFiltersVisible(false), 220);
+      return () => window.clearTimeout(timer);
+    }
+  }, [isFilterOpen, reduceMotion]);
+  const filterPanelRef = useDismiss<HTMLDivElement>({
+    active: isFilterOpen,
+    onDismiss: () => setIsFilterOpen(false),
+    outside: false,
+  });
 
   const [items, setItems] = useState<PropertyListing[]>([]);
   const [total, setTotal] = useState(0);
@@ -277,6 +286,8 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
 
             <button
               onClick={() => setIsFilterOpen(!isFilterOpen)}
+              aria-expanded={isFilterOpen}
+              aria-controls="accommodation-filter-panel"
               className={`flex items-center gap-2 px-4 py-3.5 rounded-2xl border text-sm font-medium transition-all ${
                 activeFiltersCount > 0
                   ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300'
@@ -329,8 +340,19 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
         </div>
 
         {/* Filter drawer */}
-        {isFilterOpen && (
-          <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fadeIn">
+        <AnimatePresence initial={false}>
+          {filtersVisible && (
+            <motion.div
+              id="accommodation-filter-panel"
+              ref={filterPanelRef}
+              key="accommodation-filters"
+              initial={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+              animate={reduceMotion ? { opacity: 1 } : { height: 'auto', opacity: 1 }}
+              exit={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+              transition={{ duration: reduceMotion ? 0.12 : 0.24, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden"
+            >
+          <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider mb-2">
                 Room / Property Type
@@ -429,7 +451,9 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
               </button>
             </div>
           </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Result meta */}
@@ -459,11 +483,14 @@ export const AccommodationExplorer: React.FC<AccommodationExplorerProps> = ({
 
       {/* Grid / states */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <SkeletonGroup
+          label="Loading lodges and rooms"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+        >
           {Array.from({ length: 6 }).map((_, i) => (
-            <CardSkeleton key={i} />
+            <ListingCardSkeleton key={i} />
           ))}
-        </div>
+        </SkeletonGroup>
       ) : error ? (
         <div className="text-center py-16 px-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl space-y-4">
           <div className="w-16 h-16 mx-auto rounded-full bg-red-100 dark:bg-red-950/60 text-red-600 flex items-center justify-center">

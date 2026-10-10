@@ -91,6 +91,14 @@ const BY_VIEW = new Map<ViewType, RouteDef>(ALL_ROUTES.map((r) => [r.view, r]));
 
 export const getRoute = (view: ViewType): RouteDef | undefined => BY_VIEW.get(view);
 
+/**
+ * Narrow a string that did not come from the router — a notification link read
+ * out of the database, for example — to a view that actually exists. Anything
+ * unrecognised is ignored by the caller rather than sent to the 404 page.
+ */
+export const isViewType = (value: unknown): value is ViewType =>
+  typeof value === 'string' && BY_VIEW.has(value as ViewType);
+
 /** Routes the app redirects to when a signed-out user lands on them. */
 export const PROTECTED_VIEWS: ViewType[] = ROUTES.filter((r) => r.requiresAuth).map((r) => r.view);
 

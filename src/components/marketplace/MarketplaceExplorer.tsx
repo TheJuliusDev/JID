@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { MarketplaceItem } from '../../types';
 import { BRAND_CONFIG } from '../../config/brand';
 import { searchMarketplace, MarketplaceQuery } from '../../services/database';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { takePendingSearch, canonicalFilters, SavedFilters } from '../../services/pendingSearch';
+import { useDismiss, ListingCardSkeleton, SkeletonGroup } from '../ui';
 import { MarketplaceCard } from './MarketplaceCard';
 import {
   Search,
@@ -58,16 +60,6 @@ const getCategoryIcon = (iconName: string) => {
   }
 };
 
-const CardSkeleton: React.FC = () => (
-  <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden animate-pulse">
-    <div className="aspect-[4/3] w-full bg-zinc-200 dark:bg-zinc-800" />
-    <div className="p-4 space-y-3">
-      <div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-1/2" />
-      <div className="h-4 bg-zinc-200 dark:bg-zinc-800 rounded w-3/4" />
-      <div className="h-8 bg-zinc-100 dark:bg-zinc-800/60 rounded" />
-    </div>
-  </div>
-);
 
 export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
   onOpenCreateListing,
@@ -89,6 +81,26 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
   const [boostedOnly, setBoostedOnly] = useState(() => Boolean(initial?.boostedOnly));
   const [sortBy, setSortBy] = useState<SortKey>('relevance');
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
+
+  // The filter panel is an inline accordion, not a modal: a tap out in the
+  // results grid must keep its normal meaning, so Escape is the only dismissal
+  // that comes from outside. The panel stays mounted for the length of its exit
+  // so it can collapse instead of blinking out.
+  const reduceMotion = useReducedMotion();
+  const [filtersVisible, setFiltersVisible] = useState(false);
+  useEffect(() => {
+    if (isFilterDrawerOpen) setFiltersVisible(true);
+    else if (reduceMotion) setFiltersVisible(false);
+    else {
+      const timer = window.setTimeout(() => setFiltersVisible(false), 220);
+      return () => window.clearTimeout(timer);
+    }
+  }, [isFilterDrawerOpen, reduceMotion]);
+  const filterPanelRef = useDismiss<HTMLDivElement>({
+    active: isFilterDrawerOpen,
+    onDismiss: () => setIsFilterDrawerOpen(false),
+    outside: false,
+  });
 
   const [items, setItems] = useState<MarketplaceItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -293,6 +305,8 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
 
             <button
               onClick={() => setIsFilterDrawerOpen(!isFilterDrawerOpen)}
+              aria-expanded={isFilterDrawerOpen}
+              aria-controls="marketplace-filter-panel"
               className={`flex items-center gap-2 px-4 py-3.5 rounded-2xl border text-sm font-medium transition-all ${
                 activeFiltersCount > 0
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
@@ -345,8 +359,19 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
         </div>
 
         {/* Filters drawer */}
-        {isFilterDrawerOpen && (
-          <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fadeIn">
+        <AnimatePresence initial={false}>
+          {filtersVisible && (
+            <motion.div
+              id="marketplace-filter-panel"
+              ref={filterPanelRef}
+              key="marketplace-filters"
+              initial={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+              animate={reduceMotion ? { opacity: 1 } : { height: 'auto', opacity: 1 }}
+              exit={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+              transition={{ duration: reduceMotion ? 0.12 : 0.24, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden"
+            >
+            <div className="p-5 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider mb-2">
                 Item Condition
@@ -436,8 +461,10 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
                 Reset All Filters
               </button>
             </div>
-          </div>
-        )}
+            </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Result meta */}
@@ -467,11 +494,14 @@ export const MarketplaceExplorer: React.FC<MarketplaceExplorerProps> = ({
 
       {/* Grid / states */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <SkeletonGroup
+          label="Loading campus listings"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+        >
           {Array.from({ length: 8 }).map((_, i) => (
-            <CardSkeleton key={i} />
+            <ListingCardSkeleton key={i} />
           ))}
-        </div>
+        </SkeletonGroup>
       ) : error ? (
         <div className="text-center py-16 px-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl space-y-4">
           <div className="w-16 h-16 mx-auto rounded-full bg-red-100 dark:bg-red-950/60 text-red-600 flex items-center justify-center">

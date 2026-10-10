@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import { MarketplaceItem } from '../../types';
 import { BRAND_CONFIG } from '../../config/brand';
 import { useData } from '../../context/DataContext';
@@ -46,17 +47,31 @@ export const MarketplaceCard: React.FC<MarketplaceCardProps> = ({ item, onClick,
 
       {/* Save Button */}
       {isAuthenticated && (
-        <button
+        <motion.button
+          type="button"
           onClick={handleSave}
-          className={`absolute top-3 right-3 z-10 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-md transition-all ${
+          whileTap={{ scale: 0.85 }}
+          aria-pressed={saved}
+          aria-label={saved ? `Remove ${item.title} from saved items` : `Save ${item.title}`}
+          className={`absolute top-3 right-3 z-10 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-md transition-colors ${
             saved
               ? 'bg-rose-500 text-white shadow-md'
               : 'bg-white/80 dark:bg-black/60 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800'
           }`}
           title={saved ? 'Remove from saved' : 'Save item'}
         >
-          <Heart className={`w-4 h-4 ${saved ? 'fill-current' : ''}`} />
-        </button>
+          {/* Changing the key remounts the icon, which replays the little pop on
+              every toggle instead of only on mount. */}
+          <motion.span
+            key={saved ? 'saved' : 'unsaved'}
+            initial={{ scale: 0.7, opacity: 0.6 }}
+            animate={{ scale: [0.7, 1.25, 1], opacity: 1 }}
+            transition={{ duration: 0.32, ease: 'easeOut' }}
+            className="flex items-center"
+          >
+            <Heart className={`w-4 h-4 ${saved ? 'fill-current' : ''}`} />
+          </motion.span>
+        </motion.button>
       )}
 
       {/* Product Image Container */}

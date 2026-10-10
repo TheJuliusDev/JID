@@ -10,6 +10,7 @@ import {
   deleteMarketplace,
   deleteProperty,
 } from '../../services/database';
+import { ListRowSkeleton, SkeletonGroup } from '../ui';
 import {
   PlusCircle,
   Eye,
@@ -20,7 +21,6 @@ import {
   PlayCircle,
   Clock,
   Package,
-  Loader2,
   Pencil,
   BadgeCheck,
   RotateCcw,
@@ -273,9 +273,11 @@ export const MyListingsView: React.FC<MyListingsViewProps> = ({
 
       {/* Listings List */}
       {loading ? (
-        <div className="flex items-center justify-center py-24 text-zinc-400">
-          <Loader2 className="w-7 h-7 animate-spin" />
-        </div>
+        <SkeletonGroup label="Loading your listings" className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <ListRowSkeleton key={i} className="p-4" />
+          ))}
+        </SkeletonGroup>
       ) : combinedListings.length > 0 ? (
         <div className="space-y-4">
           {combinedListings.map((entry) => {

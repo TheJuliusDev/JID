@@ -839,9 +839,17 @@ export async function fetchConversations(): Promise<Conversation[]> {
  * carries its own quote preview in the same round trip — the bubble never has to
  * go looking for the parent. RLS on `messages` already limits the join to rows
  * in conversations the caller participates in.
+ *
+ * The disambiguating hint is the FK **column** (`!reply_to_id`), never the
+ * constraint name. The constraint on this self-reference is not named
+ * `messages_reply_to_fkey` in the deployed database, so a name-based hint fails
+ * the whole request with PGRST200 — and because this string is also used on the
+ * insert path, that turned one unresolvable embed into "cannot send message".
+ * Column-name hints are resolved from the FK's own columns, so they hold
+ * whatever the constraint ended up being called.
  */
 const MESSAGE_SELECT =
-  '*, reply:messages!messages_reply_to_fkey(id, sender_id, kind, content, created_at, deleted_at)';
+  '*, reply:messages!reply_to_id(id, sender_id, kind, content, created_at, deleted_at)';
 
 function mapMessageWithReply(row: any): Message {
   const base = mapMessage(row);
@@ -977,7 +985,25 @@ export async function sendMessage(
     .insert({ conversation_id: conversationId, sender_id: senderId, ...payload })
     .select(MESSAGE_SELECT)
     .single();
-  if (error) throw error;
+
+  if (error) {
+    // The row is already committed by the time `error` is set — a failure here
+    // can only be the reply-preview join failing to resolve. PGRST2xx is
+    // PostgREST failing to parse the `select`, which an INSERT cannot cause on
+    // its own, so re-read the row without the embed instead of reporting a send
+    // that actually landed. `(sender_id, client_id)` is unique (007), so the
+    // row is unambiguous.
+    if (clientId && (error.code === 'PGRST200' || error.code === 'PGRST201')) {
+      const { data: recovered } = await sb
+        .from('messages')
+        .select('*')
+        .eq('sender_id', senderId)
+        .eq('client_id', clientId)
+        .maybeSingle();
+      if (recovered) return mapMessage(recovered);
+    }
+    throw error;
+  }
   return mapMessageWithReply(data);
 }
 

@@ -53,10 +53,14 @@ alter table public.messages
   add column if not exists delivered_at timestamptz;
 
 -- A denormalised copy of the quoted text, taken when the reply was sent.
--- The site resolves a quote by joining the parent row
--- (`messages!messages_reply_to_fkey`), which only works while the parent is in
--- the loaded page of history. In a busy thread it usually is not, and the quote
+-- The site resolves a quote by joining the parent row through the `reply_to_id`
+-- column (`messages!reply_to_id`), which only works while the parent is in the
+-- loaded page of history. In a busy thread it usually is not, and the quote
 -- renders empty. Copying the text makes the preview independent of paging.
+--
+-- Embed through the FK *column* name, not the constraint name: the constraint
+-- on this self-reference is not called `messages_reply_to_fkey`, and a
+-- constraint-name hint makes PostgREST reject the entire request with PGRST200.
 alter table public.messages
   add column if not exists reply_preview text;
 
